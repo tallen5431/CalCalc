@@ -142,6 +142,20 @@ html, body {
   font-weight: 700;
   word-break: break-all;
 }
+.notice .fixcode {
+  display: inline-block;
+  margin-top: 0.3rem;
+  padding: 0.3rem 0.45rem;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 0.35rem;
+  color: #ffe9b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  word-break: break-all;
+  /* Long enough to wrap on a phone, and it must wrap rather than overflow the
+     notice — a command you can only see half of is not a fix. */
+  white-space: pre-wrap;
+}
 
 /* ---------- typed fields ---------- */
 
@@ -194,13 +208,34 @@ html, body {
 }
 .field input::placeholder { color: #46586d; }
 
-.unitrow {
-  margin-top: 0.7rem;
-  font-size: 0.85rem;
-  color: var(--dim);
+/* A number and the unit it is in, kept together. The unit belongs beside the
+   figure it qualifies: a weight typed into a box labelled only "serving size"
+   is a weight in whatever the person assumed, which is the ambiguity this is
+   here to remove. */
+.pair {
+  display: flex;
+  align-items: stretch;
+  gap: 0.35rem;
+  flex: none;
 }
-.unitrow label { display: flex; align-items: center; gap: 0.5rem; }
-.unitrow input { width: 1.1rem; height: 1.1rem; }
+.pair input[type="number"] { width: 5rem; }
+.pair select {
+  background: #0a0e13;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 0.4rem 0.4rem;
+  min-width: 3.6rem;
+  /* iOS shrinks a select's text below this and the units become unreadable. */
+  min-height: 2.4rem;
+}
+.pair select:focus {
+  outline: 2px solid #3d7de0;
+  outline-offset: 1px;
+}
 
 .footnote {
   margin-top: 1.2rem;

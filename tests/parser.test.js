@@ -125,6 +125,15 @@ group('numbers that must never be mistaken for calories', function () {
   check('no calorie line, no calories', q.calories, null);
   check('and therefore not complete', q.complete, false);
 
+  // Glare puts accents on letters that never had them, and one of them lands
+  // on a word every serving-size pattern is anchored to. The fold that fixes
+  // this is a character class of combining marks — invisible characters an
+  // editor is free to normalise away, leaving a line that still reads correctly
+  // and does nothing. Hence this check.
+  var accented = LabelParser.parse(
+    'Serving sizé 2/3 cup (55g) Calories 230 Total Fat 8g Total Carbohydrate 37g Protein 3g');
+  check('glare accents are folded away', accented.servingGrams, 55);
+
   // The unit letter is the character this panel loses most reliably: a
   // lowercase "g" is a closed loop with a descender and comes back as a "9".
   // Measured, not assumed — the end-to-end harness reads the reference panel's
@@ -299,6 +308,86 @@ group('price', function () {
   check('a zero price divides nothing', zero.caloriesPerDollar, null);
   var neg = LabelParser.metrics(p, { price: -3 });
   check('a negative price divides nothing', neg.caloriesPerDollar, null);
+});
+
+/* ---------- typing in what the camera could not read ---------- */
+
+group('units the shopper can type', function () {
+  var c = LabelParser.convert;
+
+  check('grams pass through', c(55, 'g').amount, 55);
+  check('and stay grams', c(55, 'g').measure, 'g');
+  check('kilograms', c(1.5, 'kg').amount, 1500);
+  check('ounces', c(16, 'oz').amount, 16 * 28.349523125, 0.001);
+  check('pounds', c(2, 'lb').amount, 2 * 453.59237, 0.001);
+  check('litres become millilitres', c(2, 'l').amount, 2000);
+
+  // A volume stays a volume. Converting mL to grams needs a density the panel
+  // does not give, and inventing one puts a made-up number under the headline.
+  check('millilitres are carried, not converted', c(240, 'ml').amount, 240);
+  check('and keep their measure', c(240, 'ml').measure, 'ml');
+
+  // The unit comes from a select box this project controls, so an unknown one
+  // is a bug here rather than user input — and dropping the weight silently
+  // would be worse than labelling it grams.
+  check('an unknown unit falls back to grams', c(50, 'furlong').amount, 50);
+  check('a missing unit falls back to grams', c(50, undefined).measure, 'g');
+  check('a blank amount converts to nothing', c('', 'oz').amount, null);
+  check('and so does junk', c('abc', 'g').amount, null);
+});
+
+group('typing the mass when the scan cannot find it', function () {
+  // The case this exists for: the panel's servings line is unreadable — which
+  // is exactly what the glare frame does to it — but the package says 16 oz on
+  // the front, and that is enough to price the whole thing.
+  var p = LabelParser.parse(
+    'Serving size (55g) Calories 230 Total Fat 8g Total Carbohydrate 37g Protein 3g');
+  check('the scan has no servings count', p.servingsPerContainer, null);
+
+  var grams = LabelParser.convert(16, 'oz').amount;
+  var m = LabelParser.metrics(p, { price: 4.99, netWeightGrams: grams });
+  check('a typed mass sizes the container', m.containerBasis, 'netWeight');
+  check('total grams', m.totalGrams, 453.59, 0.01);
+  check('total calories', m.totalCalories, grams * (230 / 55), 0.01);
+  check('and calories per dollar follows', m.caloriesPerDollar, grams * (230 / 55) / 4.99, 0.01);
+
+  // A typed serving size in millilitres must relabel the headline. Getting
+  // this wrong prints "cal/g" over a number that is per millilitre.
+  var drink = LabelParser.metrics(null, {
+    calories: 120, servingGrams: 240, servingUnit: 'ml', price: 2.50, servingsPerContainer: 4
+  });
+  check('a typed millilitre serving is labelled mL', drink.perGramUnit, 'mL');
+  check('and still divides', drink.caloriesPerGram, 0.5);
+  check('and still prices', drink.caloriesPerDollar, 480 / 2.5);
+
+  // Servings wins when both are given: it is the figure the calorie line is
+  // actually stated per, and the mass has to go through the density to be used.
+  var both = LabelParser.metrics(p, { price: 4.00, servingsPerContainer: 8, netWeightGrams: 1000 });
+  check('servings is preferred over mass', both.containerBasis, 'servings');
+  check('and gives the container total', both.totalCalories, 1840);
+});
+
+group('the container total', function () {
+  // A panel that gave its servings and its serving weight but whose calorie
+  // line was unreadable used to report a container total of 0 — null times a
+  // number — and show it as a confident zero next to "cal in pack".
+  var p = LabelParser.parse('Serving size (55g) 8 servings per container');
+  check('no calories were read', p.calories, null);
+  var m = LabelParser.metrics(p, { price: 4.99 });
+  check('so there is no container total', m.totalCalories, null);
+  check('not a zero one', m.totalCalories === 0, false);
+  check('the pack mass is still known', m.totalGrams, 440);
+  check('and no rate is invented', m.caloriesPerDollar, null);
+
+  // The mirror case: calories and servings are known but the serving weight is
+  // not. Those two are the only numbers a container total needs, and this used
+  // to return nothing because both figures were computed in one branch that
+  // required the weight as well.
+  var q = LabelParser.metrics(null, { calories: 230, servingsPerContainer: 8, price: 4.99 });
+  check('calories x servings needs no weight', q.totalCalories, 1840);
+  check('and prices the package', q.caloriesPerDollar, 1840 / 4.99, 0.01);
+  check('with no density to show', q.caloriesPerGram, null);
+  check('and no pack mass', q.totalGrams, null);
 });
 
 group('hand corrections', function () {

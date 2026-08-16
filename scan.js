@@ -11,6 +11,11 @@
   var DEFAULTS = {
     price: null,
     calories: null, servingGrams: null, servingsPerContainer: null,
+    netWeight: null,
+    // The units the two typed weights are in. Kept beside the numbers rather
+    // than derived from the scan, because the whole point of typing one is
+    // that the scan could not read it.
+    servingUnit: 'g', netWeightUnit: 'g',
     fullFrame: false, haptics: true
   };
 
@@ -93,14 +98,30 @@
   // "cameras need HTTPS" by the entire distance between a fix and a fact.
   async function suggestSecureUrl() {
     try {
-      var res = await fetch('/api/status', { cache: 'no-store' });
+      // Relative, not "/api/status". `tailscale serve --set-path /calcalc`
+      // mounts this app under a prefix and strips it before proxying, so an
+      // absolute path here leaves the app's own address entirely and asks
+      // whatever owns the root of that host — a different application — for
+      // its status.
+      var res = await fetch('api/status', { cache: 'no-store' });
       if (!res.ok) return null;
       var s = await res.json();
-      if (s.tailscale && s.tailscale.hostname) {
-        return { url: 'https://' + s.tailscale.hostname + '/', how: 'tailscale' };
+
+      // Only an address Tailscale confirms is mounted on THIS app. A tailnet
+      // name is not an address: one machine commonly serves several things and
+      // whichever holds "/" owns that URL. Assembling one from the hostname
+      // sent phones to the wrong application with the scanner presenting the
+      // link as the fix.
+      if (s.tailscale && s.tailscale.serveUrl) {
+        return { url: s.tailscale.serveUrl, how: 'tailscale' };
       }
       if (s.https && s.httpsPort) {
         return { url: 'https://' + location.hostname + ':' + s.httpsPort + '/scan.html', how: 'cert' };
+      }
+      // Nothing is serving this app over HTTPS. Saying so, with the command
+      // that fixes it, beats offering a link that goes somewhere else.
+      if (s.tailscale && s.tailscale.hostname) {
+        return { how: 'unserved', port: s.httpPort, host: s.tailscale.hostname };
       }
       return null;
     } catch (e) {
@@ -117,7 +138,17 @@
       el.warn.hidden = false;
 
       var hint = await suggestSecureUrl();
-      if (hint) {
+      if (hint && hint.how === 'unserved') {
+        // Nothing publishes this app over HTTPS. There is no link to give, so
+        // it gives the command instead rather than inventing an address.
+        el.warn.textContent = base + 'Nothing is serving this app over HTTPS yet. On ' +
+          hint.host + ', run:';
+        var code = document.createElement('code');
+        code.className = 'fixcode';
+        code.textContent = 'sudo tailscale serve --bg --https=8443 ' + (hint.port || 8090);
+        el.warn.appendChild(document.createElement('br'));
+        el.warn.appendChild(code);
+      } else if (hint) {
         el.warn.textContent = base + 'Open this instead:';
         var a = document.createElement('a');
         a.href = hint.url;
@@ -305,13 +336,29 @@
     return Number.isInteger(n) ? String(n) : n.toFixed(1);
   }
 
+  // Typed weights are converted here, once, by the same helper the typed screen
+  // uses — so an ounce means the same thing on both and neither has its own
+  // copy of the number 28.35.
   function overrides() {
-    return {
+    var o = {
       price: settings.price,
       calories: settings.calories,
-      servingGrams: settings.servingGrams,
       servingsPerContainer: settings.servingsPerContainer
     };
+
+    if (settings.servingGrams !== null) {
+      var s = LabelParser.convert(settings.servingGrams, settings.servingUnit);
+      o.servingGrams = s.amount;
+      // A hand-typed serving size names its own measure. Without this a
+      // 240 mL drink typed by hand would be labelled "cal/g".
+      o.servingUnit = s.measure;
+    }
+
+    if (settings.netWeight !== null) {
+      o.netWeightGrams = LabelParser.convert(settings.netWeight, settings.netWeightUnit).amount;
+    }
+
+    return o;
   }
 
   function render(ms) {
@@ -384,7 +431,8 @@
       notes.push('This panel measures its serving in millilitres, so the figure is per mL.');
     }
     if (m.ready && m.caloriesPerDollar === null && m.price !== null && m.price > 0) {
-      notes.push('Servings per container was not read, so the price cannot be spread over the package — type it under 💲 Price.');
+      notes.push('The package size was not read, so the price cannot be spread over it. ' +
+                 'Under 💲 Price, type either the servings per container or the package mass.');
     }
     if (m.ready && m.price === null) {
       notes.push('Tap 💲 Price for calories per dollar.');
@@ -427,6 +475,9 @@
     setValue('setCalories', settings.calories);
     setValue('setGrams', settings.servingGrams);
     setValue('setServings', settings.servingsPerContainer);
+    setValue('setNetWeight', settings.netWeight);
+    document.getElementById('setGramsUnit').value = settings.servingUnit;
+    document.getElementById('setNetWeightUnit').value = settings.netWeightUnit;
     document.getElementById('priceSheet').hidden = false;
     // The price is the reason this sheet exists, so it is the field the
     // keyboard opens on.
@@ -461,15 +512,34 @@
   bind('setCalories', 'calories', 10000);
   bind('setGrams', 'servingGrams', 100000);
   bind('setServings', 'servingsPerContainer', 9999);
+  bind('setNetWeight', 'netWeight', 1000000);
+
+  // Changing a unit re-reads the number beside it, so switching g to oz
+  // updates the answer without having to retype the weight.
+  function bindUnit(id, key) {
+    document.getElementById(id).addEventListener('change', function (e) {
+      settings[key] = e.target.value;
+      save();
+      render(0);
+    });
+  }
+  bindUnit('setGramsUnit', 'servingUnit');
+  bindUnit('setNetWeightUnit', 'netWeightUnit');
 
   document.getElementById('btnClearOverrides').addEventListener('click', function () {
     settings.calories = null;
     settings.servingGrams = null;
     settings.servingsPerContainer = null;
+    settings.netWeight = null;
+    settings.servingUnit = DEFAULTS.servingUnit;
+    settings.netWeightUnit = DEFAULTS.netWeightUnit;
     save();
     setValue('setCalories', null);
     setValue('setGrams', null);
     setValue('setServings', null);
+    setValue('setNetWeight', null);
+    document.getElementById('setGramsUnit').value = settings.servingUnit;
+    document.getElementById('setNetWeightUnit').value = settings.netWeightUnit;
     render(0);
   });
 

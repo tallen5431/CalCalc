@@ -11,14 +11,20 @@
     { id: 'fCalories', key: 'calories', max: 10000 },
     { id: 'fGrams', key: 'servingGrams', max: 100000 },
     { id: 'fServings', key: 'servingsPerContainer', max: 9999 },
+    { id: 'fNetWeight', key: 'netWeight', max: 1000000 },
     { id: 'fPrice', key: 'price', max: 100000 }
+  ];
+
+  var UNIT_FIELDS = [
+    { id: 'fGramsUnit', key: 'servingUnit' },
+    { id: 'fNetWeightUnit', key: 'netWeightUnit' }
   ];
 
   var state = load();
 
   var el = {};
   ['readout', 'perGram', 'perGramUnit', 'perDollar', 'perDollarRow',
-   'vTotal', 'vPerServing', 'vPer1000', 'warn', 'fMilliliters', 'btnClear'
+   'vTotal', 'vPerServing', 'vPer1000', 'warn', 'btnClear'
   ].forEach(function (id) { el[id] = document.getElementById(id); });
 
   function load() {
@@ -28,8 +34,13 @@
       calories: numOrNull(s.calories),
       servingGrams: numOrNull(s.servingGrams),
       servingsPerContainer: numOrNull(s.servingsPerContainer),
+      netWeight: numOrNull(s.netWeight),
       price: numOrNull(s.price),
-      milliliters: !!s.milliliters
+      // An older save may carry the millilitres checkbox this replaced. It is
+      // read once so a phone that has been using the app does not silently
+      // switch a drink back to grams on upgrade.
+      servingUnit: s.servingUnit || (s.milliliters ? 'ml' : 'g'),
+      netWeightUnit: s.netWeightUnit || 'g'
     };
   }
 
@@ -62,11 +73,15 @@
   function compute() {
     // A hand-typed entry has no parsed panel behind it, so the overrides carry
     // everything. metrics() is built to be handed null for exactly this.
-    var stub = state.milliliters ? { servingUnit: 'ml' } : null;
-    return LabelParser.metrics(stub, {
+    var serving = LabelParser.convert(state.servingGrams, state.servingUnit);
+    var pack = LabelParser.convert(state.netWeight, state.netWeightUnit);
+
+    return LabelParser.metrics(null, {
       calories: state.calories,
-      servingGrams: state.servingGrams,
+      servingGrams: serving.amount,
+      servingUnit: serving.measure,
       servingsPerContainer: state.servingsPerContainer,
+      netWeightGrams: pack.amount,
       price: state.price
     });
   }
@@ -98,7 +113,11 @@
                  ' cal/g). Check the serving size.');
     }
     if (state.price !== null && state.price > 0 && m.caloriesPerDollar === null) {
-      notes.push('Calories per dollar needs servings per container as well, so the price can be spread over the package.');
+      notes.push('Calories per dollar needs the size of the package too — fill in either ' +
+                 'servings per container or the package mass.');
+    }
+    if (m.containerBasis === 'netWeight') {
+      notes.push('Container figures are from the package mass, not a servings count.');
     }
     el.warn.textContent = notes.join(' ');
     el.warn.hidden = !notes.length;
@@ -122,20 +141,25 @@
     });
   });
 
-  el.fMilliliters.checked = state.milliliters;
-  el.fMilliliters.addEventListener('change', function (e) {
-    state.milliliters = e.target.checked;
-    save();
-    render();
+  UNIT_FIELDS.forEach(function (u) {
+    var sel = document.getElementById(u.id);
+    sel.value = state[u.key];
+    sel.addEventListener('change', function (e) {
+      state[u.key] = e.target.value;
+      save();
+      render();
+    });
   });
 
   el.btnClear.addEventListener('click', function () {
-    state.calories = null;
-    state.servingGrams = null;
-    state.servingsPerContainer = null;
-    state.price = null;
+    FIELDS.forEach(function (f) {
+      state[f.key] = null;
+      document.getElementById(f.id).value = '';
+    });
+    // Units are deliberately left alone. Someone working through a shelf of
+    // drinks has set mL once and should not have to set it again for every
+    // bottle, and CLR is for the numbers.
     save();
-    FIELDS.forEach(function (f) { document.getElementById(f.id).value = ''; });
     render();
     document.getElementById('fCalories').focus();
   });

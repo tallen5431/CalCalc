@@ -38,24 +38,44 @@
       <input type="number" inputmode="numeric" id="fCalories" step="1" min="0" placeholder="230" autocomplete="off">
     </label>
 
-    <label class="field" data-for="fGrams">
-      <span class="field-label">Serving size <small>g (or mL)</small></span>
-      <input type="number" inputmode="decimal" id="fGrams" step="1" min="0" placeholder="55" autocomplete="off">
-    </label>
+    <div class="field">
+      <span class="field-label">Serving size <small>the weight one serving is</small></span>
+      <div class="pair">
+        <input type="number" inputmode="decimal" id="fGrams" step="0.1" min="0" placeholder="55" autocomplete="off">
+        <select id="fGramsUnit" aria-label="Serving size unit">
+          <option value="g">g</option>
+          <option value="ml">mL</option>
+          <option value="oz">oz</option>
+        </select>
+      </div>
+    </div>
 
     <label class="field" data-for="fServings">
       <span class="field-label">Servings per container</span>
       <input type="number" inputmode="decimal" id="fServings" step="1" min="0" placeholder="8" autocomplete="off">
     </label>
 
+    <!-- Either of these sizes the package. Servings is the better one when the
+         label gives it; mass is what you fall back on when it does not, or
+         when it says something as useless as "about 3.5". -->
+    <div class="field">
+      <span class="field-label">Package mass <small>instead of servings, if that's blank</small></span>
+      <div class="pair">
+        <input type="number" inputmode="decimal" id="fNetWeight" step="1" min="0" placeholder="440" autocomplete="off">
+        <select id="fNetWeightUnit" aria-label="Package mass unit">
+          <option value="g">g</option>
+          <option value="kg">kg</option>
+          <option value="ml">mL</option>
+          <option value="oz">oz</option>
+          <option value="lb">lb</option>
+        </select>
+      </div>
+    </div>
+
     <label class="field" data-for="fPrice">
       <span class="field-label">Price <small>for the whole package</small></span>
       <input type="number" inputmode="decimal" id="fPrice" step="0.01" min="0" placeholder="4.99" autocomplete="off">
     </label>
-  </div>
-
-  <div class="unitrow">
-    <label><input type="checkbox" id="fMilliliters"> Serving is in millilitres</label>
   </div>
 
   <nav class="bottombar">

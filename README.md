@@ -21,9 +21,30 @@ Tap **💲 Price**, type what the package costs, and the second figure appears.
 The price is remembered per device, not per product, so it is one field to
 retype rather than a database to maintain.
 
-Everything the camera read can be corrected in that same sheet. OCR gets the odd
-line wrong and the person holding the box can see which one; a blank field means
-"use what was scanned".
+### When the camera cannot work something out
+
+Everything the camera reads can be typed instead, in that same **💲 Price**
+sheet — calories, serving size, servings per container, and the package mass.
+OCR gets the odd line wrong and the person holding the box can see which one; a
+blank field means "use what was scanned".
+
+Weights carry their own unit, so you type what is printed on the package rather
+than converting first:
+
+| Field | Units |
+|---|---|
+| Serving size | g, mL, oz |
+| Package mass | g, kg, mL, oz, lb |
+
+**Package mass is the way round a missing servings count.** Calories per dollar
+needs to know how much is in the package, and the servings line is the part of
+the panel most often lost to glare. If it will not read, type the net weight off
+the front of the package instead — `NET WT 16 OZ` — and the container total comes
+from that and the density. The screen says which of the two it used.
+
+Changing a unit re-reads the number beside it, so switching g to oz updates the
+answer without retyping. **CLR** clears the numbers but keeps the units: working
+along a shelf of drinks, you set mL once.
 
 **⌨ Type** is the same arithmetic with no camera involved. It works on plain
 http, on a desktop, and on a panel too crumpled to read.
@@ -133,20 +154,44 @@ is no camera to open at all, and the page says so rather than failing quietly.
 
 Tailscale issues a real, publicly-trusted certificate for your machine's
 MagicDNS name, which means no warning, no CA to install, and the offline
-home-screen install works too. From this directory:
+home-screen install works too.
+
+**Check what is already there first.** One machine often serves several things,
+and whichever is mounted on `/` owns the plain `https://<machine>.<tailnet>.ts.net/`
+address:
 
 ```sh
-sudo tailscale serve --bg 8090
+tailscale serve status
 ```
 
-Then open `https://<your-machine>.<your-tailnet>.ts.net/` on the phone. It works
-from anywhere on the tailnet — the shop as much as the kitchen — and nothing is
-exposed publicly.
+If that comes back empty, the root is free:
 
-`server.js` looks this up at startup and prints the exact URL to open, so you do
-not have to remember your tailnet name. When the camera is blocked, `/scan.html`
-asks the server the same question and puts the working address **on screen as a
-link**, rather than telling you that cameras need HTTPS and leaving you there.
+```sh
+sudo tailscale serve --bg 8090          # -> https://<machine>.<tailnet>.ts.net/
+```
+
+**If something else already holds `/`** — an Ollama chat UI, the HTTP Server
+Manager, anything — you do **not** have to take it down. Give CalCalc its own
+address instead. Either works; the port is the simpler of the two:
+
+```sh
+sudo tailscale serve --bg --https=8443 8090        # -> https://<machine>.<tailnet>.ts.net:8443/
+sudo tailscale serve --bg --set-path /calcalc 8090 # -> https://<machine>.<tailnet>.ts.net/calcalc/
+```
+
+Both leave the existing service exactly where it is. The app is built to run
+under a path prefix — every URL in it is relative, and the service worker scopes
+itself to wherever it is mounted — so `--set-path` needs no configuration here.
+
+Then open the address on the phone. It works from anywhere on the tailnet — the
+shop as much as the kitchen — and nothing is exposed publicly.
+
+`server.js` **asks Tailscale where this app is actually published** rather than
+assembling a URL from the hostname, and prints the real address at startup. When
+the camera is blocked, `/scan.html` asks the same question and puts that address
+on screen as a link — or, if nothing is serving this port yet, the command that
+would fix it. It will never hand you a link to whatever else happens to live on
+that machine.
 
 ### Without Tailscale
 
@@ -196,6 +241,18 @@ to the manager's `config.json` like this:
 app, so the URL must have no port on it. `autostart` is worth setting — the
 point of this app is that it is already running when you are standing in a shop.
 
+That config assumes CalCalc is on the **root** of the tailnet name. If something
+else is (see above), those three URL fields will generate an address that opens
+the other app, so set the real one explicitly instead:
+
+```json
+"url": "https://your-machine.your-tailnet.ts.net:8443",
+```
+
+or, for a path mount, `"url": "https://your-machine.your-tailnet.ts.net/calcalc/"`.
+A manual `url` overrides the generated one. `server.js` prints the correct
+address at startup if you are not sure which you ended up with.
+
 If the `tailscale` CLI is not on the manager's PATH, set `tailscaleHostname` at
 the root of its config, or `TAILSCALE_HOSTNAME` in the environment. This server
 reads the same two variables.
@@ -239,7 +296,7 @@ phone. There is no account and no server-side record of anything scanned.
 ## Tests
 
 ```sh
-npm test                        # 115 checks, no browser, no dependencies
+npm test                        # 171 checks, no browser, no dependencies
 ```
 
 The end-to-end harness needs a browser and is deliberately not part of that:
@@ -285,6 +342,7 @@ link inside the root actually points.
 | `tools/make-cert.sh` | `npm run cert` — local certificate authority for https |
 | `tools/make-icons.js` | `npm run icons` — regenerates `icons/` |
 | `tests/parser.test.js` | The reading and arithmetic, headless |
+| `tests/serve.test.js` | Where `tailscale serve` publishes this app |
 | `tests/e2e.js` | The real pipeline, in a real browser |
 
 ## Notes

@@ -87,6 +87,9 @@ function sendJson(res, status, obj) {
  * TAILSCALE_HOSTNAME for exactly this reason).
  */
 var tailnet = { name: null, checked: false };
+// Where `tailscale serve` actually publishes this port, if it publishes it at
+// all. Null means "not served", which is a different thing from "no Tailscale".
+var serveMount = null;
 
 function findTailnetName(done) {
   var configured = process.env.TAILSCALE_HOSTNAME || process.env.TS_CERT_DOMAIN;
@@ -111,6 +114,77 @@ function findTailnetName(done) {
     } catch (e) { /* not JSON: an old CLI, or something else called tailscale */ }
     tailnet = { name: name, checked: true, source: name ? 'tailscale' : 'absent' };
     done(tailnet);
+  });
+}
+
+/* Where `tailscale serve` publishes this port — asked, never assumed.
+ *
+ * A tailnet name plus HTTPS does NOT mean this app is at the root of it. One
+ * machine commonly serves several things, and whichever was mounted on "/"
+ * owns that address. Constructing "https://<tailnet>/" and calling it the
+ * camera URL sent a phone to a completely different application on the same
+ * host, with the scanner cheerfully presenting the link as the fix.
+ *
+ * So the mapping is read back out of `tailscale serve status --json`, which
+ * knows what is mounted where:
+ *
+ *   { "Web": { "host.tailnet.ts.net:443": {
+ *       "Handlers": { "/": { "Proxy": "http://127.0.0.1:3000" },
+ *                     "/calcalc": { "Proxy": "http://127.0.0.1:8090" } } } } }
+ *
+ * The handler whose proxy target is this server's port is this app's address,
+ * whatever path or port it happens to be on. If nothing points here, the
+ * honest answer is that this app is not served over HTTPS yet — and the
+ * startup banner prints the command that would fix it.
+ */
+// Pure, and exported, so the mapping can be tested against real CLI output
+// without a tailnet. This is the logic that sent a phone to the wrong
+// application; it earns a test.
+function pickServeMount(status, port) {
+  var web = status && status.Web;
+  if (!web || typeof web !== 'object') return null;
+
+  var found = null;
+  Object.keys(web).forEach(function (hostport) {
+    var handlers = web[hostport] && web[hostport].Handlers;
+    if (!handlers || typeof handlers !== 'object') return;
+    Object.keys(handlers).forEach(function (mountPath) {
+      var proxy = handlers[mountPath] && handlers[mountPath].Proxy;
+      if (typeof proxy !== 'string') return;
+      // Match on the port this process is listening on. The host half varies —
+      // 127.0.0.1, localhost, and a bare "8090" are all written by different
+      // versions of the CLI — so only the port is compared.
+      var m = proxy.match(/:(\d+)\/?\s*$/) || proxy.match(/^(\d+)$/);
+      if (!m || parseInt(m[1], 10) !== port) return;
+
+      // hostport is "name:443"; 443 is implied in a URL and noise in one.
+      var parts = String(hostport).split(':');
+      var host = parts[0];
+      var hostPort = (!parts[1] || parts[1] === '443') ? '' : ':' + parts[1];
+      var path = mountPath === '/' ? '/' : mountPath.replace(/\/+$/, '') + '/';
+
+      // The shortest address wins if several point here — that is the one
+      // least annoying to type on a phone.
+      var url = 'https://' + host + hostPort + path;
+      if (!found || url.length < found.url.length) {
+        found = { url: url, host: host, path: mountPath };
+      }
+    });
+  });
+
+  return found;
+}
+
+function findServeMount(port, done) {
+  execFile('tailscale', ['serve', 'status', '--json'], { timeout: 3000 }, function (err, stdout) {
+    if (err) return done(null);      // no Tailscale, or an old CLI without this
+    var status;
+    try {
+      status = JSON.parse(stdout);
+    } catch (e) {
+      return done(null);
+    }
+    done(pickServeMount(status, port));
   });
 }
 
@@ -176,7 +250,11 @@ function route(req, res) {
       https: !!tls,
       tailscale: {
         hostname: tailnet.name,
-        source: tailnet.source || null
+        source: tailnet.source || null,
+        // The address that actually reaches THIS app over HTTPS, or null.
+        // Never assembled from the hostname — see findServeMount.
+        serveUrl: serveMount ? serveMount.url : null,
+        servePath: serveMount ? serveMount.path : null
       },
       addresses: lanAddresses(),
       // Whether the request itself arrived somewhere the camera can be opened.
@@ -262,6 +340,7 @@ function listen(server, port, label, fatal, onReady) {
 
 var tls = findCert();
 
+function start() {
 listen(http.createServer(handler), PORT, 'http', true, function () {
   console.log('CalCalc serving ' + ROOT);
   console.log('  http://localhost:' + PORT + '/');
@@ -282,15 +361,45 @@ listen(http.createServer(handler), PORT, 'http', true, function () {
   // Printed last, because it is the line worth reading. Everything above is an
   // address the camera will refuse to open on.
   findTailnetName(function (ts) {
+    findServeMount(PORT, function (mount) {
+      serveMount = mount;
+      printAdvice(ts, mount);
+    });
+  });
+});
+}
+
+// Serving is what happens when this file is the program. When it is required —
+// by tests/serve.test.js, to check the mount mapping against real CLI output —
+// nothing binds a port.
+if (require.main === module) start();
+module.exports = { pickServeMount: pickServeMount };
+
+function printAdvice(ts, mount) {
     console.log('');
-    if (ts.name) {
+    if (mount) {
+      console.log('Tailscale: this app is served at');
+      console.log('');
+      console.log('      ' + mount.url);
+      console.log('');
+      console.log('  Open that on the phone — a real certificate, nothing to install,');
+      console.log('  and the camera works from anywhere on the tailnet.');
+    } else if (ts.name) {
       console.log('Tailscale: ' + ts.name + (ts.source === 'environment' ? ' (from the environment)' : ''));
-      console.log('  Serve it over HTTPS and the phone camera just works — a real');
-      console.log('  certificate, nothing to install, reachable from anywhere on the tailnet:');
+      console.log('  Nothing is serving port ' + PORT + ' over HTTPS yet, so the camera will');
+      console.log('  not open on the tailnet address. One command fixes it:');
       console.log('');
-      console.log('      sudo tailscale serve --bg ' + PORT);
+      console.log('      sudo tailscale serve --bg --https=8443 ' + PORT);
+      console.log('      -> https://' + ts.name + ':8443/');
       console.log('');
-      console.log('  then open   https://' + ts.name + '/   on the phone.');
+      console.log('  That leaves port 443 alone. If nothing else is using the root of');
+      console.log('  this machine, plain `sudo tailscale serve --bg ' + PORT + '` gives you');
+      console.log('  https://' + ts.name + '/ instead — but check first:');
+      console.log('');
+      console.log('      tailscale serve status');
+      console.log('');
+      console.log('  Whatever is mounted on "/" owns that address, and this app will not');
+      console.log('  be what a phone opening it gets.');
     } else if (tls) {
       console.log('No Tailscale here, but https is on. Open the https address above on');
       console.log('the phone and accept the warning once — that is a genuine secure');
@@ -300,11 +409,10 @@ listen(http.createServer(handler), PORT, 'http', true, function () {
       console.log('http only, so the camera will not open on any address above except');
       console.log('localhost. Two ways to fix it, in order of how little work they are:');
       console.log('');
-      console.log('  1. Tailscale:  sudo tailscale serve --bg ' + PORT);
+      console.log('  1. Tailscale:  sudo tailscale serve --bg --https=8443 ' + PORT);
       console.log('     A real certificate, nothing to install on the phone.');
       console.log('  2. Local cert: npm run cert   (then restart; warns once)');
       console.log('');
       console.log('The ⌨ Type screen works anywhere, with no camera at all.');
     }
-  });
-});
+}

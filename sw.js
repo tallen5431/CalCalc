@@ -56,7 +56,13 @@ self.addEventListener('fetch', function (e) {
    * `cache: 'no-store'`. The scanner uses it to tell you which address will
    * actually open the camera, so a stale answer sends you to an address that
    * has since changed. None of it is any use offline either. */
-  if (url.pathname.indexOf('/api/') === 0) return;
+  // Resolved against the worker's own scope, not the root. Under `tailscale
+  // serve --set-path /calcalc` this app lives at /calcalc/, so its status
+  // endpoint is /calcalc/api/status — and a check for a leading "/api/" does
+  // not match it, which would cache the one response that must never be
+  // cached and freeze the app's idea of where it is served.
+  var scope = new URL(self.registration.scope).pathname;
+  if (url.pathname.indexOf(scope + 'api/') === 0) return;
 
   e.respondWith(
     caches.match(e.request).then(function (hit) {

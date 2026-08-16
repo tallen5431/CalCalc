@@ -69,10 +69,40 @@
 
     <label class="row"><span>Calories per serving</span>
       <input type="number" inputmode="numeric" id="setCalories" step="1" min="0" placeholder="scanned"></label>
-    <label class="row"><span>Serving size<small>grams, or mL for drinks</small></span>
-      <input type="number" inputmode="decimal" id="setGrams" step="1" min="0" placeholder="scanned"></label>
+
+    <!-- Serving size carries its own unit. Reading a weight off a package and
+         having to convert it to grams first is exactly the step this is here
+         to remove. -->
+    <div class="row"><span>Serving size<small>the weight one serving is</small></span>
+      <div class="pair">
+        <input type="number" inputmode="decimal" id="setGrams" step="0.1" min="0" placeholder="scanned">
+        <select id="setGramsUnit" aria-label="Serving size unit">
+          <option value="g">g</option>
+          <option value="ml">mL</option>
+          <option value="oz">oz</option>
+        </select>
+      </div>
+    </div>
+
     <label class="row"><span>Servings per container</span>
       <input type="number" inputmode="decimal" id="setServings" step="1" min="0" placeholder="scanned"></label>
+
+    <!-- The other way to size a package. Plenty of labels state a net weight
+         and no servings count, and some state a servings count too vague to
+         use ("about 3.5"); either way this gets you a container total, and
+         therefore calories per dollar. -->
+    <div class="row"><span>Package mass<small>net weight — only needed if servings is blank</small></span>
+      <div class="pair">
+        <input type="number" inputmode="decimal" id="setNetWeight" step="1" min="0" placeholder="scanned">
+        <select id="setNetWeightUnit" aria-label="Package mass unit">
+          <option value="g">g</option>
+          <option value="kg">kg</option>
+          <option value="ml">mL</option>
+          <option value="oz">oz</option>
+          <option value="lb">lb</option>
+        </select>
+      </div>
+    </div>
 
     <button class="wide" id="btnClearOverrides" type="button">Clear corrections</button>
     <p class="note" id="engineNote">Reading happens entirely on this device. No image is stored or uploaded.</p>

@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "serve": "node server.js",
-    "test": "node tests/parser.test.js",
+    "test": "node tests/parser.test.js && node tests/serve.test.js",
     "cert": "bash tools/make-cert.sh",
     "icons": "node tools/make-icons.js"
   },

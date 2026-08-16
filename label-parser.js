@@ -98,6 +98,12 @@
     // above the line — and one of them lands squarely on a word this parser
     // anchors on. The glare frame reads "Serving sizé", which matched nothing
     // and cost the serving weight, and therefore the headline.
+    // The character class below is the combining-mark range U+0300–U+036F,
+    // spelled with the marks themselves. That makes it a run of invisible
+    // characters which an editor or a copy-paste is free to normalise away,
+    // turning this line into a no-op that still looks right — so the behaviour
+    // is pinned by a test ("glare accents are folded away") rather than trusted
+    // to survive on the strength of how it reads here.
     if (typeof out.normalize === 'function') {
       out = out.normalize('NFD').replace(/[̀-ͯ]/g, '');
     }
@@ -562,22 +568,44 @@
     var netWeight = num(o.netWeightGrams, parsed && parsed.netWeightGrams);
     var price = num(o.price, null);
 
-    var unit = (parsed && parsed.servingUnit) || 'g';
+    // The unit is overridable like everything else. A panel that says "(240mL)"
+    // and reads back as grams, or a serving weight typed in by hand off a
+    // package the camera could not manage, both need the person to be able to
+    // say which measure the number is in — otherwise the headline is labelled
+    // wrong even when the arithmetic is right.
+    var unit = o.servingUnit || (parsed && parsed.servingUnit) || 'g';
     var perGram = (calories !== null && grams) ? calories / grams : null;
 
-    // What the container holds, by whichever route the panel supports. The
-    // servings count is preferred because it is the figure the calorie line is
-    // stated per; net weight is the fallback for panels whose servings line was
-    // unreadable, and it needs the density to be usable at all.
+    /* What the container holds, by whichever route is available.
+     *
+     * The two figures have different requirements and are worked out
+     * separately, which they were not before: a single `if (servings && grams)`
+     * computed `servings * calories` in a branch that had only established
+     * `grams`, so a panel whose calorie line was unreadable produced a
+     * container total of **0** — null times a number — and displayed it as a
+     * confident zero. It also meant a package that gave its servings count and
+     * calories but not its serving weight produced no container total at all,
+     * when those two numbers are the only ones that total actually needs.
+     */
     var totalGrams = null, totalCalories = null, basis = null;
-    if (servings && grams) {
-      totalGrams = servings * grams;
+
+    if (servings && calories !== null) {
       totalCalories = servings * calories;
       basis = 'servings';
-    } else if (netWeight && perGram !== null) {
-      totalGrams = netWeight;
+    }
+    if (servings && grams) {
+      totalGrams = servings * grams;
+    }
+
+    // Net weight is the fallback for a package whose servings line was
+    // unreadable. It needs the density, which is the one thing it cannot
+    // supply itself.
+    if (totalCalories === null && netWeight && perGram !== null) {
       totalCalories = netWeight * perGram;
       basis = 'netWeight';
+    }
+    if (totalGrams === null && netWeight) {
+      totalGrams = netWeight;
     }
 
     // A price with nothing to divide into it is not an error, it is a field
@@ -630,6 +658,46 @@
     };
   }
 
+  /* ---------- units the shopper can type ----------
+   *
+   * A package states its mass in whatever unit it likes — grams on the panel,
+   * ounces on the front, pounds on a bag of rice — and a person typing a
+   * number the camera could not read should not have to do the conversion
+   * first. This is the one place that arithmetic lives, so the scanner and the
+   * typed screen cannot disagree about what an ounce is.
+   *
+   * Millilitres are carried, never converted. A millilitre of oil and a
+   * millilitre of water do not weigh the same, and inventing a density to hide
+   * that would put a made-up number under the headline — so a volume stays a
+   * volume and the display says so.
+   */
+  var UNITS = {
+    g: { factor: 1, measure: 'g' },
+    gram: { factor: 1, measure: 'g' },
+    grams: { factor: 1, measure: 'g' },
+    kg: { factor: 1000, measure: 'g' },
+    oz: { factor: GRAMS_PER_OZ, measure: 'g' },
+    lb: { factor: GRAMS_PER_LB, measure: 'g' },
+    lbs: { factor: GRAMS_PER_LB, measure: 'g' },
+    ml: { factor: 1, measure: 'ml' },
+    l: { factor: 1000, measure: 'ml' },
+    liter: { factor: 1000, measure: 'ml' },
+    litre: { factor: 1000, measure: 'ml' }
+  };
+
+  // Returns { amount, measure } where measure is 'g' or 'ml' — the two things
+  // the rest of the app knows how to divide by. An unknown unit is treated as
+  // grams rather than rejected: it can only come from a select box this project
+  // controls, and a silently dropped serving weight is worse than a wrong label
+  // on it.
+  function convert(value, unit) {
+    var n = (typeof value === 'number') ? value : parseFloat(value);
+    if (!isFinite(n)) return { amount: null, measure: 'g' };
+    var key = String(unit || 'g').toLowerCase().trim();
+    var u = UNITS.hasOwnProperty(key) ? UNITS[key] : UNITS.g;
+    return { amount: n * u.factor, measure: u.measure };
+  }
+
   // An override only counts when it is a real, usable number. An empty input
   // box is not a zero, and a zero serving weight is a division this app must
   // never do.
@@ -645,6 +713,7 @@
   return {
     parse: parse,
     metrics: metrics,
+    convert: convert,
     normalize: normalize,
     toNumber: toNumber,
     atwater: atwater,
