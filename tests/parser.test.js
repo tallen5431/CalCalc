@@ -390,6 +390,33 @@ group('the container total', function () {
   check('and no pack mass', q.totalGrams, null);
 });
 
+group('what counts as worth keeping', function () {
+  // `ready` means the density is available. `usable` means there is something
+  // worth showing and worth saving, which is a weaker bar — and the Save button
+  // was gated on the wrong one, so a figure visible on screen could not be put
+  // in the record.
+  var noWeight = LabelParser.metrics(null, {
+    calories: 100, servingsPerContainer: 2, price: 5
+  });
+  check('no serving weight, so no density', noWeight.ready, false);
+  check('but a calories-per-dollar figure exists', noWeight.caloriesPerDollar, 40);
+  check('so it is worth keeping', noWeight.usable, true);
+
+  var density = LabelParser.metrics(null, { calories: 230, servingGrams: 55 });
+  check('a density with no price is usable', density.usable, true);
+  check('and ready', density.ready, true);
+
+  var nothing = LabelParser.metrics(null, { price: 5 });
+  check('a price on its own is not', nothing.usable, false);
+  check('nor is nothing at all', LabelParser.metrics(null, {}).usable, false);
+
+  // A zero-calorie drink has a real density of 0 and no meaningful rate. It is
+  // still a record of the food.
+  var water = LabelParser.metrics(null, { calories: 0, servingGrams: 355, price: 1.50, servingsPerContainer: 1 });
+  check('a zero-calorie item is still keepable', water.usable, true);
+  check('with no calories per dollar', water.caloriesPerDollar, null);
+});
+
 group('hand corrections', function () {
   var p = LabelParser.parse(FDA_PANEL);
 

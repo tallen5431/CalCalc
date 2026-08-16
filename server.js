@@ -218,19 +218,27 @@ var JOURNAL_PATH = process.env.JOURNAL || path.join(ROOT, 'data', 'journal.jsonl
 var MAX_BODY = 8192;
 
 function readJsonBody(req, done) {
-  var text = '';
+  // Chunks are collected as bytes and decoded once at the end. Appending a
+  // Buffer to a string decodes each chunk on its own, and a character whose
+  // bytes land either side of a chunk boundary is then two half-characters:
+  // "café" arrives as "caf��". Names are typed by a person, on a
+  // phone, about food — accents are not an edge case in that list.
+  var chunks = [];
+  var length = 0;
   var over = false;
+
   req.on('data', function (chunk) {
     if (over) return;
-    text += chunk;
-    if (text.length > MAX_BODY) { over = true; req.destroy(); done(new Error('too big')); }
+    chunks.push(chunk);
+    length += chunk.length;
+    if (length > MAX_BODY) { over = true; req.destroy(); done(new Error('too big')); }
   });
   req.on('error', function () { if (!over) { over = true; done(new Error('aborted')); } });
   req.on('end', function () {
     if (over) return;
     over = true;
     try {
-      var parsed = JSON.parse(text || '{}');
+      var parsed = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
       done(null, (parsed && typeof parsed === 'object') ? parsed : null);
     } catch (e) {
       done(e);
@@ -291,6 +299,28 @@ function route(req, res) {
    * and nothing can destroy a record.
    */
   if (req.method === 'POST' && (bare === '/api/items' || bare === '/api/items/mark')) {
+    /* JSON only, and this is a security check rather than a formality.
+     *
+     * A cross-origin POST carrying Content-Type: text/plain is a "simple
+     * request": the browser sends it without a preflight, so any page on the
+     * internet you happened to open while your phone was on the tailnet could
+     * write rows into this journal. Measured, not theorised — it worked.
+     *
+     * Requiring application/json makes such a request non-simple, so the
+     * browser must ask permission first with an OPTIONS preflight, which this
+     * server answers with 405 and no CORS headers. That is a refusal, and the
+     * write never leaves the browser.
+     *
+     * It stops a *browser* being used as the weapon. Anyone who can reach this
+     * port directly can still append — there is no authentication here, which
+     * is why it belongs on a tailnet and not on the open internet. Appending is
+     * also the worst they can do: nothing here rewrites or deletes a row.
+     */
+    var ctype = String(req.headers['content-type'] || '').toLowerCase();
+    if (ctype.indexOf('application/json') !== 0) {
+      return sendJson(res, 415, { ok: false, error: 'send application/json' });
+    }
+
     var mark = bare === '/api/items/mark';
     return readJsonBody(req, function (err, body) {
       if (err || !body) return sendJson(res, 400, { ok: false, error: 'bad body' });

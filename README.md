@@ -349,13 +349,20 @@ and `JOURNAL=` moves it. Nothing in this app writes anywhere else.
 
 **The server has no authentication**, which is defensible on a tailnet — only
 your own devices can reach it — and is why it should not be exposed publicly.
-Anyone who can reach it can add an entry to the list. Nothing they add can
+Anyone who can reach the port can add an entry to the list. Nothing they add can
 destroy or rewrite one.
+
+A browser, though, cannot be turned into that reach. Writes require
+`Content-Type: application/json`, which makes them non-simple requests: a page on
+some other site cannot send one without a CORS preflight first, and this server
+answers preflights with 405 and no CORS headers. Without that requirement, any
+site you happened to open while your phone was on the tailnet could have written
+rows into the journal with a plain form POST — measured, not theorised.
 
 ## Tests
 
 ```sh
-npm test                        # 220 checks, no browser, no dependencies
+npm test                        # 229 checks, no browser, no dependencies
 ```
 
 The end-to-end harness needs a browser and is deliberately not part of that:

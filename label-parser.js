@@ -622,7 +622,14 @@
     }
 
     return {
+      // The density is available, which is what the headline needs.
       ready: perGram !== null,
+      // Something worth showing and worth keeping — a weaker bar than `ready`
+      // on purpose. A package whose serving weight never read still has a
+      // calories-per-dollar figure if its calorie count, servings and price are
+      // known, and gating the Save button on `ready` meant that figure could be
+      // seen on screen and not put in the record.
+      usable: perGram !== null || caloriesPerDollar !== null,
       calories: calories,
       servingGrams: grams,
       servingUnit: unit,

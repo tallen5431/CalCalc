@@ -393,7 +393,7 @@
     // is not required — but it is what most people do, and holding still while
     // typing a name is not possible, so the value is captured on tap rather
     // than read again on save.
-    el.btnSave.hidden = !m.ready;
+    el.btnSave.hidden = !m.usable;
 
     el.warn.textContent = '';
     var notes = noteworthy(m);
@@ -443,6 +443,14 @@
     }
     if (m.ready && m.price === null) {
       notes.push('Tap 💲 Price for calories per dollar.');
+    }
+    // The density guard lives in the parser and only sees what the camera read.
+    // A hand-typed serving weight bypasses it entirely — and a mistyped one is
+    // exactly as wrong as a misread one, so the same impossibility is worth
+    // pointing out here too.
+    if (m.caloriesPerGram !== null && m.caloriesPerGram > LabelParser.limits.MAX_KCAL_PER_G) {
+      notes.push('That is denser than pure fat (' + LabelParser.limits.MAX_KCAL_PER_G +
+                 ' cal/g) — check the serving size under 💲 Price.');
     }
     if (m.containerBasis === 'netWeight') {
       notes.push('Container total is from the net weight, not a servings count.');
@@ -560,7 +568,7 @@
 
   el.btnSave.addEventListener('click', function () {
     var m = LabelParser.metrics(lastParsed, overrides());
-    if (!m.ready) return;
+    if (!m.usable) return;
 
     pendingSave = { metrics: m, parsed: lastParsed };
     frozen = true;
@@ -573,8 +581,11 @@
     setTimeout(function () { el.setName.focus(); }, 50);
   });
 
+  // Only the figures there actually are. Leading with "-- cal/g" on an item
+  // that has a perfectly good calories-per-dollar reads as a broken save.
   function summarise(m) {
-    var bits = [round(m.caloriesPerGram, 2) + ' cal/' + m.perGramUnit];
+    var bits = [];
+    if (m.caloriesPerGram !== null) bits.push(round(m.caloriesPerGram, 2) + ' cal/' + m.perGramUnit);
     if (m.caloriesPerDollar !== null) bits.push(round(m.caloriesPerDollar, 0) + ' cal/$');
     if (m.price !== null) bits.push('$' + m.price.toFixed(2));
     return bits.join(' · ');
@@ -625,9 +636,18 @@
     render(0);
     // Anything saved while out of range goes now. This is the moment the phone
     // is most likely to be back on the tailnet — the page just loaded from it.
-    if (Save.pending()) {
+    var waiting = Save.pending();
+    if (waiting) {
       Save.flush().then(function (r) {
-        if (!r.queued) showSaved(null, 0);
+        // Reports what actually went out. Reusing the after-a-save message here
+        // announced 'Saved "Unnamed"' on every launch that had a queue,
+        // naming an item nobody had just saved.
+        if (r.queued) return;
+        el.saveNote.textContent = waiting === 1
+          ? 'Sent 1 saved item to the server.'
+          : 'Sent ' + waiting + ' saved items to the server.';
+        el.saveNote.hidden = false;
+        setTimeout(function () { el.saveNote.hidden = true; }, 4000);
       });
     }
     try {

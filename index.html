@@ -87,8 +87,9 @@
   </nav>
 
   <p class="footnote">
-    Nothing here leaves the device. What you type is kept on this phone so the
-    numbers are still there when you come back.
+    What you type is kept on this device, so the numbers are still here when you
+    come back. Saving an item sends it to the CalCalc server — that is what makes
+    it a record — and nothing else is uploaded anywhere.
   </p>
 </main>
 
@@ -96,7 +97,7 @@
 <div class="sheet" id="nameSheet" hidden>
   <div class="sheet-inner">
     <header><h2>Save this item</h2><button class="close" data-close="nameSheet" type="button">Cancel</button></header>
-    <label class="row"><span>Name<small>what you would call it in a list</small></span></label>
+    <label class="row" for="setName"><span>Name<small>what you would call it in a list</small></span></label>
     <input class="nameinput" type="text" id="setName" maxlength="80" autocomplete="off"
            enterkeyhint="done" placeholder="e.g. Store brand oats, 18oz">
     <div id="saveSummary" class="savesummary"></div>

@@ -123,15 +123,16 @@
     el.warn.textContent = notes.join(' ');
     el.warn.hidden = !notes.length;
 
-    el.btnSave.hidden = !m.ready;
+    el.btnSave.hidden = !m.usable;
   }
 
   /* ---------- saving ---------- */
 
   el.btnSave.addEventListener('click', function () {
     var m = compute();
-    if (!m.ready) return;
-    var bits = [round(m.caloriesPerGram, 2) + ' cal/' + m.perGramUnit];
+    if (!m.usable) return;
+    var bits = [];
+    if (m.caloriesPerGram !== null) bits.push(round(m.caloriesPerGram, 2) + ' cal/' + m.perGramUnit);
     if (m.caloriesPerDollar !== null) bits.push(round(m.caloriesPerDollar, 0) + ' cal/$');
     if (m.price !== null) bits.push(money(m.price));
     el.saveSummary.textContent = bits.join(' · ');
