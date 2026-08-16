@@ -1,7 +1,7 @@
 /* Offline cache. Bump CACHE whenever a file in ASSETS changes — this is
  * cache-first, so a phone holding the old worker would otherwise keep serving
  * the old page forever. */
-var CACHE = 'calcalc-v1';
+var CACHE = 'calcalc-v2';
 
 /* The app shell only. The OCR engine under vendor/ is deliberately absent:
  * three core builds and a language model come to ~15MB, and a phone downloads
@@ -18,6 +18,10 @@ var ASSETS = [
   'scan.html',
   'scan.css',
   'scan.js',
+  'save.js',
+  'records.html',
+  'records.css',
+  'records.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',

@@ -35,7 +35,8 @@
   var el = {};
   ['video', 'frame', 'reticle', 'verdict', 'verdictLabel', 'perGram', 'perGramUnit',
    'perDollar', 'perDollarRow', 'vCal', 'vServing', 'vServings', 'vTotal',
-   'warn', 'statusline', 'btnFreeze', 'photo', 'btnPrice'
+   'warn', 'statusline', 'btnFreeze', 'photo', 'btnPrice',
+   'btnSave', 'saveNote', 'nameSheet', 'setName', 'btnSaveConfirm', 'saveSummary'
   ].forEach(function (id) { el[id] = document.getElementById(id); });
 
   var ctx = el.frame.getContext('2d', { willReadFrequently: true });
@@ -388,6 +389,12 @@
     // column heading carries it instead.
     el.vTotal.textContent = m.totalCalories === null ? '--' : round(m.totalCalories, 0);
 
+    // Offered only when there is a reading behind it. Freezing the scan first
+    // is not required — but it is what most people do, and holding still while
+    // typing a name is not possible, so the value is captured on tap rather
+    // than read again on save.
+    el.btnSave.hidden = !m.ready;
+
     el.warn.textContent = '';
     var notes = noteworthy(m);
     if (notes.length) {
@@ -543,6 +550,68 @@
     render(0);
   });
 
+  /* ---------- saving ---------- */
+
+  // What is being saved is frozen at the moment Save is tapped. The camera is
+  // still running while a name is typed, and the reading it drifts to two
+  // seconds later is not the one that was on screen when the decision to keep
+  // it was made.
+  var pendingSave = null;
+
+  el.btnSave.addEventListener('click', function () {
+    var m = LabelParser.metrics(lastParsed, overrides());
+    if (!m.ready) return;
+
+    pendingSave = { metrics: m, parsed: lastParsed };
+    frozen = true;
+    document.body.classList.add('frozen');
+    el.btnFreeze.textContent = '▶ Scan';
+
+    el.saveSummary.textContent = summarise(m);
+    el.setName.value = '';
+    el.nameSheet.hidden = false;
+    setTimeout(function () { el.setName.focus(); }, 50);
+  });
+
+  function summarise(m) {
+    var bits = [round(m.caloriesPerGram, 2) + ' cal/' + m.perGramUnit];
+    if (m.caloriesPerDollar !== null) bits.push(round(m.caloriesPerDollar, 0) + ' cal/$');
+    if (m.price !== null) bits.push('$' + m.price.toFixed(2));
+    return bits.join(' · ');
+  }
+
+  el.btnSaveConfirm.addEventListener('click', function () {
+    if (!pendingSave) return;
+    var name = el.setName.value.trim();
+    el.nameSheet.hidden = true;
+    el.btnSaveConfirm.disabled = true;
+
+    Save.save(name, pendingSave.metrics, pendingSave.parsed, 'scan').then(function (r) {
+      el.btnSaveConfirm.disabled = false;
+      pendingSave = null;
+      showSaved(name, r.queued);
+    });
+  });
+
+  // Enter on the name field saves, because the keyboard is already up and
+  // reaching past it for a button on a phone is a poor way to end the job.
+  el.setName.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); el.btnSaveConfirm.click(); }
+  });
+
+  function showSaved(name, queued) {
+    var label = name || 'Unnamed';
+    el.saveNote.textContent = queued
+      // Never "saved" when it is not on the server yet. The phone knowing about
+      // an item is not the same as the record having it, and the difference
+      // matters the moment the phone is wiped or replaced.
+      ? 'Kept on this phone — ' + queued + ' waiting to reach the server.'
+      : 'Saved “' + label + '”.';
+    el.saveNote.hidden = false;
+    buzz([12, 30, 12]);
+    setTimeout(function () { el.saveNote.hidden = true; }, 4000);
+  }
+
   /* ---------- boot ---------- */
 
   // Registering fails on an untrusted certificate and that is fine — it costs
@@ -554,6 +623,13 @@
   (async function () {
     el.reticle.classList.toggle('full', settings.fullFrame);
     render(0);
+    // Anything saved while out of range goes now. This is the moment the phone
+    // is most likely to be back on the tailnet — the page just loaded from it.
+    if (Save.pending()) {
+      Save.flush().then(function (r) {
+        if (!r.queued) showSaved(null, 0);
+      });
+    }
     try {
       await startEngine();
     } catch (e) {

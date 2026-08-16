@@ -24,7 +24,8 @@
 
   var el = {};
   ['readout', 'perGram', 'perGramUnit', 'perDollar', 'perDollarRow',
-   'vTotal', 'vPerServing', 'vPer1000', 'warn', 'btnClear'
+   'vTotal', 'vPerServing', 'vPer1000', 'warn', 'btnClear',
+   'btnSave', 'saveNote', 'nameSheet', 'setName', 'btnSaveConfirm', 'saveSummary'
   ].forEach(function (id) { el[id] = document.getElementById(id); });
 
   function load() {
@@ -121,7 +122,47 @@
     }
     el.warn.textContent = notes.join(' ');
     el.warn.hidden = !notes.length;
+
+    el.btnSave.hidden = !m.ready;
   }
+
+  /* ---------- saving ---------- */
+
+  el.btnSave.addEventListener('click', function () {
+    var m = compute();
+    if (!m.ready) return;
+    var bits = [round(m.caloriesPerGram, 2) + ' cal/' + m.perGramUnit];
+    if (m.caloriesPerDollar !== null) bits.push(round(m.caloriesPerDollar, 0) + ' cal/$');
+    if (m.price !== null) bits.push(money(m.price));
+    el.saveSummary.textContent = bits.join(' · ');
+    el.setName.value = '';
+    el.nameSheet.hidden = false;
+    setTimeout(function () { el.setName.focus(); }, 50);
+  });
+
+  el.btnSaveConfirm.addEventListener('click', function () {
+    var name = el.setName.value.trim();
+    el.nameSheet.hidden = true;
+    el.btnSaveConfirm.disabled = true;
+    // No parsed panel behind a typed entry, so no reading flags — the record
+    // says `typed` and that is the whole story of where the numbers came from.
+    Save.save(name, compute(), null, 'typed').then(function (r) {
+      el.btnSaveConfirm.disabled = false;
+      el.saveNote.textContent = r.queued
+        ? 'Kept on this device — ' + r.queued + ' waiting to reach the server.'
+        : 'Saved “' + (name || 'Unnamed') + '”.';
+      el.saveNote.hidden = false;
+      setTimeout(function () { el.saveNote.hidden = true; }, 4000);
+    });
+  });
+
+  el.setName.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); el.btnSaveConfirm.click(); }
+  });
+
+  document.querySelectorAll('[data-close]').forEach(function (b) {
+    b.addEventListener('click', function () { document.getElementById(b.dataset.close).hidden = true; });
+  });
 
   /* ---------- input ---------- */
 

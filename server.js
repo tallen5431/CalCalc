@@ -21,6 +21,8 @@ var url = require('url');
 var os = require('os');
 var execFile = require('child_process').execFile;
 
+var Journal = require('./journal.js');
+
 var ROOT = __dirname;
 // Deliberately not 8080. The HTTP Server Manager's own scaffolding defaults
 // imported Node projects to 8080, so anything else already on the shelf is
@@ -59,7 +61,10 @@ var TYPES = {
  * Anyone who fetches it can mint a certificate your phone will believe, for
  * any site.
  */
-var PRIVATE = /(^|\/)(ssl|node_modules|\.git)(\/|$)|(^|\/)\./i;
+// `data/` holds the record of what you have scanned and where you shop. It is
+// reached through /api/items, which returns rows — the file itself is never
+// served, so the path is never taken from the request.
+var PRIVATE = /(^|\/)(ssl|data|node_modules|\.git)(\/|$)|(^|\/)\./i;
 var SECRET_EXT = /\.(pem|key|crt|cer|p12|pfx|jks)$/i;
 
 function isPrivate(pathname) {
@@ -199,6 +204,63 @@ function lanAddresses() {
   return out;
 }
 
+/* ---------- the record ----------
+ *
+ * One JSON object per line, appended, never rewritten. The format survives a
+ * power cut with the loss of at most the line being written, which a single
+ * JSON document holding everything does not.
+ */
+var JOURNAL_PATH = process.env.JOURNAL || path.join(ROOT, 'data', 'journal.jsonl');
+
+// Small on purpose. Nothing this server accepts is bigger than a name and a
+// handful of numbers, so a body that keeps arriving is not a large request, it
+// is a client that should be hung up on.
+var MAX_BODY = 8192;
+
+function readJsonBody(req, done) {
+  var text = '';
+  var over = false;
+  req.on('data', function (chunk) {
+    if (over) return;
+    text += chunk;
+    if (text.length > MAX_BODY) { over = true; req.destroy(); done(new Error('too big')); }
+  });
+  req.on('error', function () { if (!over) { over = true; done(new Error('aborted')); } });
+  req.on('end', function () {
+    if (over) return;
+    over = true;
+    try {
+      var parsed = JSON.parse(text || '{}');
+      done(null, (parsed && typeof parsed === 'object') ? parsed : null);
+    } catch (e) {
+      done(e);
+    }
+  });
+}
+
+function appendJournal(line, done) {
+  fs.mkdir(path.dirname(JOURNAL_PATH), { recursive: true }, function (mkErr) {
+    if (mkErr) return done(mkErr);
+    fs.appendFile(JOURNAL_PATH, JSON.stringify(line) + '\n', done);
+  });
+}
+
+function readJournal(done) {
+  fs.readFile(JOURNAL_PATH, 'utf8', function (err, text) {
+    if (err) return done([]);          // nothing recorded yet is not an error
+    var rows = [];
+    text.split('\n').forEach(function (line) {
+      line = line.trim();
+      if (!line) return;
+      try {
+        var row = JSON.parse(line);
+        if (row && typeof row === 'object') rows.push(row);
+      } catch (e) { /* a line torn by a power cut; skip it */ }
+    });
+    done(rows);
+  });
+}
+
 /* ---------- routing ---------- */
 
 // Anything thrown while routing becomes a 500 for that one request instead of
@@ -219,6 +281,29 @@ function handler(req, res) {
 }
 
 function route(req, res) {
+  var bare = req.url.split('?')[0];
+
+  /* Saving an item, and hiding one.
+   *
+   * Both only ever append a line. This server has no authentication and sits on
+   * whatever network it is reachable from, so the worst anyone who reaches it
+   * can do is add an entry to a list — nothing here can reach an existing row,
+   * and nothing can destroy a record.
+   */
+  if (req.method === 'POST' && (bare === '/api/items' || bare === '/api/items/mark')) {
+    var mark = bare === '/api/items/mark';
+    return readJsonBody(req, function (err, body) {
+      if (err || !body) return sendJson(res, 400, { ok: false, error: 'bad body' });
+      var now = Date.now();
+      var result = mark ? Journal.sanitizeMark(body, now) : Journal.sanitize(body, now);
+      if (result.error) return sendJson(res, 400, { ok: false, error: result.error });
+      appendJournal(result.item, function (writeErr) {
+        if (writeErr) return sendJson(res, 500, { ok: false, error: writeErr.message });
+        sendJson(res, 200, { ok: true, item: result.item });
+      });
+    });
+  }
+
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     return send(res, 405, 'method not allowed', { 'Content-Type': 'text/plain' });
   }
@@ -261,6 +346,29 @@ function route(req, res) {
       // The browser knows this too (isSecureContext), but only the server can
       // say what the working address would be.
       secure: !!req.socket.encrypted
+    });
+  }
+
+  // Everything saved. The file lives under data/, which the static handler
+  // refuses outright, and it stays that way — this returns rows and nothing
+  // else, so no path is ever taken from the request.
+  if (pathname === '/api/items' || pathname === '/api/items.csv') {
+    var q = url.parse(req.url, true).query || {};
+    var withHidden = q.hidden === '1';
+    return readJournal(function (rows) {
+      var items = Journal.collapse(rows);
+      var hidden = items.filter(function (r) { return r.hidden; }).length;
+      // Hidden rows are still on disk — nothing here deletes — but they are out
+      // of the list and the export unless asked for by name.
+      if (!withHidden) items = items.filter(function (r) { return !r.hidden; });
+
+      if (pathname === '/api/items.csv') {
+        return send(res, 200, Journal.toCsv(items), {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="calcalc-items.csv"'
+        });
+      }
+      sendJson(res, 200, { count: items.length, hidden: hidden, items: items });
     });
   }
 

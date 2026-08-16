@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CalCalc — Saved</title>
+<meta name="theme-color" content="#0b0f14">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="records.css">
+</head>
+<body>
+
+<main id="app">
+
+  <header class="pagehead">
+    <h1>Saved</h1>
+    <span id="count" class="dim"></span>
+  </header>
+
+  <!-- The reason for keeping records: the answer is a comparison, and a
+       comparison needs an order. -->
+  <div class="sorter" id="sorter">
+    <button type="button" data-sort="perDollar" class="on">Best cal/$</button>
+    <button type="button" data-sort="perGram">Densest</button>
+    <button type="button" data-sort="cheapest">Cheapest</button>
+    <button type="button" data-sort="newest">Newest</button>
+  </div>
+
+  <div id="pending" class="notice" hidden></div>
+  <div id="empty" class="emptystate" hidden></div>
+
+  <ul id="list" class="records"></ul>
+
+  <div class="recordfoot">
+    <a class="linkbtn" id="csv" href="api/items.csv">⤓ CSV</a>
+    <label class="showhidden"><input type="checkbox" id="showHidden"> Show hidden</label>
+  </div>
+
+  <nav class="bottombar">
+    <a class="linkbtn" href="index.html">⌨ Type</a>
+    <a class="linkbtn primary" href="scan.html">📷 Scan</a>
+  </nav>
+</main>
+
+<script src="save.js"></script>
+<script src="records.js"></script>
+</body>
+</html>

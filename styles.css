@@ -342,3 +342,44 @@ button.wide { width: 100%; margin-top: 0.6rem; }
   line-height: 1.5;
   margin: 0.8rem 0 0;
 }
+
+/* ---------- saving ---------- */
+
+button.save {
+  margin-top: 0.75rem;
+  background: #14351f;
+  border-color: #1f5c36;
+  color: #d8f5e4;
+}
+button.save:active { background: #1b4529; }
+button.primary { background: #1d4ed8; border-color: #2c5fe6; }
+
+.savenote {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--low);
+  text-align: center;
+}
+
+.nameinput {
+  width: 100%;
+  background: #0a0e13;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  color: var(--ink);
+  font: inherit;
+  /* 16px or iOS Safari zooms the page when the field takes focus, which on the
+     scanner puts the reticle off screen behind the keyboard. */
+  font-size: 1.05rem;
+  padding: 0.6rem 0.7rem;
+  min-height: 2.8rem;
+  margin-bottom: 0.6rem;
+}
+.nameinput:focus { outline: 2px solid #3d7de0; outline-offset: 1px; }
+
+.savesummary {
+  font-size: 0.85rem;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 0.8rem;
+}

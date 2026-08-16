@@ -3,6 +3,11 @@
 # and the server refuses to serve this directory at all.
 ssl/
 
+# What you have scanned: a list of what you buy, what it costs and when you were
+# shopping. It belongs on your machine and not in a repository — the server
+# refuses to serve the directory for the same reason.
+data/
+
 node_modules/
 npm-debug.log*
 .DS_Store

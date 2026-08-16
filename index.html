@@ -28,6 +28,8 @@
       <div class="sub"><span id="vPer1000">--</span><small>$/1000 cal</small></div>
     </div>
     <div id="warn" class="notice" hidden></div>
+    <button class="wide save" id="btnSave" type="button" hidden>💾 Save this</button>
+    <div id="saveNote" class="savenote" hidden></div>
   </section>
 
   <!-- Four numbers off the panel and one off the shelf edge. The order is the
@@ -80,7 +82,8 @@
 
   <nav class="bottombar">
     <button id="btnClear" type="button">CLR</button>
-    <a class="linkbtn primary" href="scan.html">📷 Scan a label</a>
+    <a class="linkbtn" href="records.html">▤ Saved</a>
+    <a class="linkbtn primary" href="scan.html">📷 Scan</a>
   </nav>
 
   <p class="footnote">
@@ -89,7 +92,22 @@
   </p>
 </main>
 
+<!-- Naming the thing, same sheet as the scanner uses. -->
+<div class="sheet" id="nameSheet" hidden>
+  <div class="sheet-inner">
+    <header><h2>Save this item</h2><button class="close" data-close="nameSheet" type="button">Cancel</button></header>
+    <label class="row"><span>Name<small>what you would call it in a list</small></span></label>
+    <input class="nameinput" type="text" id="setName" maxlength="80" autocomplete="off"
+           enterkeyhint="done" placeholder="e.g. Store brand oats, 18oz">
+    <div id="saveSummary" class="savesummary"></div>
+    <button class="wide primary" id="btnSaveConfirm" type="button">Save</button>
+    <p class="note">Saved to the CalCalc server. If this device is out of range it
+      is kept here and sent the next time the page can reach it.</p>
+  </div>
+</div>
+
 <script src="label-parser.js"></script>
+<script src="save.js"></script>
 <script src="ui.js"></script>
 </body>
 </html>

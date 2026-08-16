@@ -49,6 +49,50 @@ along a shelf of drinks, you set mL once.
 **⌨ Type** is the same arithmetic with no camera involved. It works on plain
 http, on a desktop, and on a panel too crumpled to read.
 
+## Keeping what you find
+
+**💾 Save this** appears under the readout once there is a reading. Give the item
+a name and it goes into the record; **▤ Saved** is the list.
+
+A single scan answers "what am I holding". The list answers the question the
+record exists for — *which of these is the better buy* — so it sorts, and the
+best calories per dollar is badged wherever it happens to sit:
+
+| Sort | |
+|---|---|
+| Best cal/$ | the most food for the money |
+| Densest | the most calories per gram |
+| Cheapest | lowest $ per 1000 calories |
+| Newest | in the order you found them |
+
+Each row carries **how the reading was made** — `macros agreed`, `calories
+corrected`, `unit assumed`, `typed`, `pack size from mass`. A saved number with
+no record of how much to trust it cannot be checked a month later, when the
+package it came from is in a bin.
+
+**⤓ CSV** exports the lot for a spreadsheet.
+
+### It saves in the shop, not just at home
+
+The record lives on the server, but the phone standing in the aisle is often out
+of range of it. A save is written to the phone first and sent afterwards, so
+nothing is lost to a basement with no signal — the screen says *"Kept on this
+phone — 1 waiting to reach the server"* rather than claiming a save that has not
+happened, and it goes out the next time the page can reach the server. Every
+entry carries an id generated on the phone, so a retry lands on the same row
+instead of filing a second copy.
+
+### Nothing is deleted
+
+**Hide** appends a note rather than removing a line; hidden items are out of the
+list and the export until **Show hidden** is ticked, and can be unhidden. A
+mis-tap on a phone in a shop should cost an entry in a list, not a record.
+
+The file is `data/journal.jsonl` — one JSON object per line, appended, never
+rewritten, so a power cut costs at most the line being written. The server
+refuses to serve `data/` at all; the page reads it through `/api/items`. Set
+`JOURNAL=/some/path.jsonl` to put it elsewhere.
+
 ## The math
 
 ```
@@ -288,15 +332,30 @@ build it can run; a given phone downloads only the ~4MB variant it needs, once.
 
 ## Privacy
 
-Camera frames are read and discarded. No image is stored or transmitted, the OCR
-engine and its language model are vendored locally, and the app makes no network
-request after it loads. Prices and corrections are kept in `localStorage` on the
-phone. There is no account and no server-side record of anything scanned.
+**Camera frames are read and discarded.** No image is ever stored or
+transmitted. The OCR engine and its language model are vendored locally, so the
+reading happens on the device and needs no network at all.
+
+**Saved items do go to the server** — that is what makes them a record rather
+than something a cleared browser takes with it. They go to *your* server, the
+one running this code, and nowhere else: there is no account, no third party,
+and no telemetry. What lands in `data/journal.jsonl` is what you named and the
+numbers on screen. Prices, corrections and anything not yet synced stay in
+`localStorage` on the phone.
+
+Worth knowing what that file is: a list of what you buy, what it costs and when
+you were shopping. It is gitignored, the server refuses to serve the directory,
+and `JOURNAL=` moves it. Nothing in this app writes anywhere else.
+
+**The server has no authentication**, which is defensible on a tailnet — only
+your own devices can reach it — and is why it should not be exposed publicly.
+Anyone who can reach it can add an entry to the list. Nothing they add can
+destroy or rewrite one.
 
 ## Tests
 
 ```sh
-npm test                        # 171 checks, no browser, no dependencies
+npm test                        # 220 checks, no browser, no dependencies
 ```
 
 The end-to-end harness needs a browser and is deliberately not part of that:
@@ -332,6 +391,9 @@ link inside the root actually points.
 | Path | |
 |---|---|
 | `index.html` `ui.js` | The typed calculator |
+| `records.html` `records.js` `records.css` | Everything saved, and the orders to read it in |
+| `save.js` | Saving a named item, with the offline queue |
+| `journal.js` | What may go into the record, and how it exports |
 | `scan.html` `scan.js` `scan.css` | The camera scanner |
 | `label-parser.js` | Reads a panel, and the arithmetic — browser and Node both |
 | `styles.css` | Shared styling |
@@ -343,6 +405,7 @@ link inside the root actually points.
 | `tools/make-icons.js` | `npm run icons` — regenerates `icons/` |
 | `tests/parser.test.js` | The reading and arithmetic, headless |
 | `tests/serve.test.js` | Where `tailscale serve` publishes this app |
+| `tests/journal.test.js` | What the record accepts, collapses and exports |
 | `tests/e2e.js` | The real pipeline, in a real browser |
 
 ## Notes
