@@ -1,0 +1,18 @@
+{
+  "name": "calcalc",
+  "version": "1.0.0",
+  "description": "Point a phone at a Nutrition Facts panel and get calories per gram — and, with a price, calories per dollar.",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "serve": "node server.js",
+    "test": "node tests/parser.test.js",
+    "cert": "bash tools/make-cert.sh",
+    "icons": "node tools/make-icons.js"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "license": "MIT"
+}

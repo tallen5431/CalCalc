@@ -1,0 +1,310 @@
+#!/usr/bin/env node
+/* Static file server for CalCalc.
+ *
+ * This project is a website, not a Node program — the JavaScript in it runs in
+ * a browser. Hosts that look for a Node entry point should land here, which is
+ * why package.json points "main" and "start" at this file.
+ *
+ *   node server.js              # http://localhost:8090
+ *   PORT=3000 node server.js
+ *
+ * No dependencies, so there is nothing to install first.
+ */
+
+'use strict';
+
+var http = require('http');
+var https = require('https');
+var fs = require('fs');
+var path = require('path');
+var url = require('url');
+var os = require('os');
+var execFile = require('child_process').execFile;
+
+var ROOT = __dirname;
+// Deliberately not 8080. The HTTP Server Manager's own scaffolding defaults
+// imported Node projects to 8080, so anything else already on the shelf is
+// probably sitting there — and two programs fighting over a port present as
+// one of them mysteriously refusing to start.
+var PORT = parseInt(process.env.PORT, 10) || 8090;
+var HTTPS_PORT = parseInt(process.env.HTTPS_PORT, 10) || 8453;
+var HOST = process.env.HOST || '0.0.0.0';
+var SSL_DIR = path.join(ROOT, 'ssl');
+
+var TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.wasm': 'application/wasm',
+  '.txt': 'text/plain; charset=utf-8',
+  // Served as an opaque blob on purpose. This is the OCR language model, which
+  // the reader inflates itself — labelling it Content-Encoding: gzip would have
+  // the browser silently decompress it first and hand the reader garbage.
+  '.gz': 'application/octet-stream'
+};
+
+/* Things that must never leave the machine, however they are asked for.
+ *
+ * On a tailnet this server has no authentication, and over a LAN it has no
+ * transport security either — every file under ROOT is one GET away from
+ * anyone who can reach the port. That is fine for a page of HTML and not fine
+ * for `ssl/ca-key.pem`, which is the private key of the certificate authority
+ * `tools/make-cert.sh` asks you to install on your phone as a trust anchor.
+ * Anyone who fetches it can mint a certificate your phone will believe, for
+ * any site.
+ */
+var PRIVATE = /(^|\/)(ssl|node_modules|\.git)(\/|$)|(^|\/)\./i;
+var SECRET_EXT = /\.(pem|key|crt|cer|p12|pfx|jks)$/i;
+
+function isPrivate(pathname) {
+  return PRIVATE.test(pathname) || SECRET_EXT.test(pathname);
+}
+
+function send(res, status, body, headers) {
+  res.writeHead(status, Object.assign({ 'Cache-Control': 'no-cache' }, headers || {}));
+  res.end(body);
+}
+
+function sendJson(res, status, obj) {
+  send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json; charset=utf-8' });
+}
+
+/* ---------- where the phone should be pointed ----------
+ *
+ * The camera is the whole point of this app and browsers only hand one out in
+ * a secure context, so the single most useful thing this server can say at
+ * startup is which of its own addresses will actually work. That answer
+ * depends on Tailscale, so it goes and finds out rather than guessing.
+ *
+ * `tailscale status --json` is the authority; the environment variables are
+ * for hosts where the CLI is not on PATH (the HTTP Server Manager sets
+ * TAILSCALE_HOSTNAME for exactly this reason).
+ */
+var tailnet = { name: null, checked: false };
+
+function findTailnetName(done) {
+  var configured = process.env.TAILSCALE_HOSTNAME || process.env.TS_CERT_DOMAIN;
+  if (configured) {
+    tailnet = { name: configured, checked: true, source: 'environment' };
+    return done(tailnet);
+  }
+  // Short timeout and a swallowed error: Tailscale not being installed is an
+  // ordinary state for this program, not a failure of it.
+  execFile('tailscale', ['status', '--json'], { timeout: 3000 }, function (err, stdout) {
+    if (err) {
+      tailnet = { name: null, checked: true, source: 'absent' };
+      return done(tailnet);
+    }
+    var name = null;
+    try {
+      var status = JSON.parse(stdout);
+      var self = status && status.Self;
+      if (self && typeof self.DNSName === 'string' && self.DNSName) {
+        name = self.DNSName.replace(/\.$/, '');   // MagicDNS names arrive rooted
+      }
+    } catch (e) { /* not JSON: an old CLI, or something else called tailscale */ }
+    tailnet = { name: name, checked: true, source: name ? 'tailscale' : 'absent' };
+    done(tailnet);
+  });
+}
+
+function lanAddresses() {
+  var out = [];
+  var ifaces = os.networkInterfaces();
+  Object.keys(ifaces).forEach(function (name) {
+    (ifaces[name] || []).forEach(function (nic) {
+      if (nic.family === 'IPv4' && !nic.internal) out.push(nic.address);
+    });
+  });
+  return out;
+}
+
+/* ---------- routing ---------- */
+
+// Anything thrown while routing becomes a 500 for that one request instead of
+// the end of the process. A phone in a supermarket reloading a page is not a
+// reason for the server at home to stop serving.
+function handler(req, res) {
+  try {
+    route(req, res);
+  } catch (e) {
+    console.error('request failed: ' + req.method + ' ' + req.url + ' — ' + e.message);
+    try {
+      send(res, 500, 'server error', { 'Content-Type': 'text/plain' });
+    } catch (ignored) {
+      // Headers already went out. Nothing to say; just do not take the process
+      // down over it.
+    }
+  }
+}
+
+function route(req, res) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return send(res, 405, 'method not allowed', { 'Content-Type': 'text/plain' });
+  }
+
+  var pathname;
+  try {
+    pathname = decodeURIComponent(url.parse(req.url).pathname);
+  } catch (e) {
+    return send(res, 400, 'bad request', { 'Content-Type': 'text/plain' });
+  }
+
+  // A percent-encoded NUL survives decodeURIComponent as a real \0, and every
+  // check below it is string work that lets it through: path.resolve keeps it
+  // and ROOT-containment still matches. It then reaches fs.realpath, which
+  // validates its argument synchronously and throws. No file has a NUL in its
+  // name, so there is nothing here to serve and nothing lost by refusing early.
+  if (pathname.indexOf('\0') !== -1) {
+    return send(res, 400, 'bad request', { 'Content-Type': 'text/plain' });
+  }
+
+  // What this server knows about itself. The page uses it to tell you *why*
+  // the camera will not open and what address to use instead, which over a
+  // tailnet is the difference between a fixable problem and a mystery.
+  if (pathname === '/api/status') {
+    return sendJson(res, 200, {
+      app: 'CalCalc',
+      httpPort: PORT,
+      httpsPort: tls ? HTTPS_PORT : null,
+      https: !!tls,
+      tailscale: {
+        hostname: tailnet.name,
+        source: tailnet.source || null
+      },
+      addresses: lanAddresses(),
+      // Whether the request itself arrived somewhere the camera can be opened.
+      // The browser knows this too (isSecureContext), but only the server can
+      // say what the working address would be.
+      secure: !!req.socket.encrypted
+    });
+  }
+
+  if (pathname.endsWith('/')) pathname += 'index.html';
+
+  // Resolve first, then confirm the result is still inside ROOT, so "..", an
+  // encoded traversal and an absolute path all fail the same way.
+  var file = path.resolve(ROOT, '.' + pathname);
+  if ((file !== ROOT && !file.startsWith(ROOT + path.sep)) || isPrivate(pathname)) {
+    return send(res, 403, 'forbidden', { 'Content-Type': 'text/plain' });
+  }
+
+  // ...and again after following links. Resolving the *path* proves nothing
+  // about where a symlink inside ROOT actually points, and a lexical check
+  // alone would happily serve whatever it aims at.
+  fs.realpath(file, function (linkErr, real) {
+    if (linkErr) return send(res, 404, 'not found', { 'Content-Type': 'text/plain' });
+    if (real !== ROOT && !real.startsWith(ROOT + path.sep)) {
+      return send(res, 403, 'forbidden', { 'Content-Type': 'text/plain' });
+    }
+    serveFile(req, res, real);
+  });
+}
+
+function serveFile(req, res, file) {
+  fs.stat(file, function (err, stat) {
+    if (err || !stat.isFile()) {
+      return send(res, 404, 'not found', { 'Content-Type': 'text/plain' });
+    }
+    var headers = {
+      'Content-Type': TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream',
+      'Content-Length': stat.size,
+      'Cache-Control': 'no-cache'
+    };
+    if (req.method === 'HEAD') return send(res, 200, '', headers);
+
+    res.writeHead(200, headers);
+    var stream = fs.createReadStream(file);
+    stream.on('error', function () { res.destroy(); });
+    stream.pipe(res);
+  });
+}
+
+/* ---------- listening ---------- */
+
+// Browsers gate the camera, the home-screen install and service workers behind
+// a secure context, so over plain http on a LAN address the scanner cannot open
+// a camera at all.
+//
+// Certificates are found on disk rather than configured, because the usual way
+// this runs is a process manager invoking Start.sh — there is no shell in which
+// to set an environment variable. Drop a pair in ./ssl (npm run cert) and https
+// starts appearing on the next restart, alongside http rather than instead of
+// it, so nothing that already points at the http port breaks.
+function findCert() {
+  var cert = process.env.SSL_CERT || path.join(SSL_DIR, 'cert.pem');
+  var key = process.env.SSL_KEY || path.join(SSL_DIR, 'key.pem');
+  try {
+    return { cert: fs.readFileSync(cert), key: fs.readFileSync(key), certPath: cert };
+  } catch (e) {
+    return null;
+  }
+}
+
+// A listener that cannot bind must not take the other one down with it. The
+// https port failing is an inconvenience; the process dying under a supervisor
+// that restarts it is a loop.
+function listen(server, port, label, fatal, onReady) {
+  server.on('error', function (err) {
+    var why = err.code === 'EADDRINUSE' ? 'port ' + port + ' is already in use' : err.message;
+    console.error('\ncould not start ' + label + ': ' + why);
+    if (fatal) process.exit(1);
+    console.error(label + ' is off; the rest of the server is still running.');
+  });
+  server.listen(port, HOST, onReady);
+}
+
+var tls = findCert();
+
+listen(http.createServer(handler), PORT, 'http', true, function () {
+  console.log('CalCalc serving ' + ROOT);
+  console.log('  http://localhost:' + PORT + '/');
+  lanAddresses().forEach(function (ip) {
+    console.log('  http://' + ip + ':' + PORT + '/');
+  });
+
+  if (tls) {
+    listen(https.createServer({ cert: tls.cert, key: tls.key }, handler),
+           HTTPS_PORT, 'https', false, function () {
+      console.log('\nhttps using ' + tls.certPath);
+      lanAddresses().forEach(function (ip) {
+        console.log('  https://' + ip + ':' + HTTPS_PORT + '/');
+      });
+    });
+  }
+
+  // Printed last, because it is the line worth reading. Everything above is an
+  // address the camera will refuse to open on.
+  findTailnetName(function (ts) {
+    console.log('');
+    if (ts.name) {
+      console.log('Tailscale: ' + ts.name + (ts.source === 'environment' ? ' (from the environment)' : ''));
+      console.log('  Serve it over HTTPS and the phone camera just works — a real');
+      console.log('  certificate, nothing to install, reachable from anywhere on the tailnet:');
+      console.log('');
+      console.log('      sudo tailscale serve --bg ' + PORT);
+      console.log('');
+      console.log('  then open   https://' + ts.name + '/   on the phone.');
+    } else if (tls) {
+      console.log('No Tailscale here, but https is on. Open the https address above on');
+      console.log('the phone and accept the warning once — that is a genuine secure');
+      console.log('context, which is all the camera needs. See README.md for the');
+      console.log('offline install, which needs ssl/ca.pem trusted as well.');
+    } else {
+      console.log('http only, so the camera will not open on any address above except');
+      console.log('localhost. Two ways to fix it, in order of how little work they are:');
+      console.log('');
+      console.log('  1. Tailscale:  sudo tailscale serve --bg ' + PORT);
+      console.log('     A real certificate, nothing to install on the phone.');
+      console.log('  2. Local cert: npm run cert   (then restart; warns once)');
+      console.log('');
+      console.log('The ⌨ Type screen works anywhere, with no camera at all.');
+    }
+  });
+});

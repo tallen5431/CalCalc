@@ -1,0 +1,12 @@
+# The local certificate authority. ca-key.pem can mint a certificate any phone
+# that trusts ca.pem will believe, for any site — it must never be committed
+# and the server refuses to serve this directory at all.
+ssl/
+
+node_modules/
+npm-debug.log*
+.DS_Store
+*.swp
+
+# Scratch output from the end-to-end harness in tests/.
+tests/out/

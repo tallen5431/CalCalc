@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>CalCalc</title>
+<meta name="theme-color" content="#0b0f14">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<main id="app">
+
+  <section id="readout" class="verdict empty">
+    <div class="rate">
+      <span class="rate-value" id="perGram">--</span>
+      <span class="rate-unit" id="perGramUnit">cal/g</span>
+    </div>
+    <div class="rate second" id="perDollarRow" hidden>
+      <span class="rate-value" id="perDollar">--</span>
+      <span class="rate-unit">cal/$</span>
+    </div>
+    <div class="submetrics">
+      <div class="sub"><span id="vTotal">--</span><small>container</small></div>
+      <div class="sub"><span id="vPerServing">--</span><small>$/serving</small></div>
+      <div class="sub"><span id="vPer1000">--</span><small>$/1000 cal</small></div>
+    </div>
+    <div id="warn" class="notice" hidden></div>
+  </section>
+
+  <!-- Four numbers off the panel and one off the shelf edge. The order is the
+       order they appear on the package. -->
+  <div class="fields">
+    <label class="field" data-for="fCalories">
+      <span class="field-label">Calories per serving</span>
+      <input type="number" inputmode="numeric" id="fCalories" step="1" min="0" placeholder="230" autocomplete="off">
+    </label>
+
+    <label class="field" data-for="fGrams">
+      <span class="field-label">Serving size <small>g (or mL)</small></span>
+      <input type="number" inputmode="decimal" id="fGrams" step="1" min="0" placeholder="55" autocomplete="off">
+    </label>
+
+    <label class="field" data-for="fServings">
+      <span class="field-label">Servings per container</span>
+      <input type="number" inputmode="decimal" id="fServings" step="1" min="0" placeholder="8" autocomplete="off">
+    </label>
+
+    <label class="field" data-for="fPrice">
+      <span class="field-label">Price <small>for the whole package</small></span>
+      <input type="number" inputmode="decimal" id="fPrice" step="0.01" min="0" placeholder="4.99" autocomplete="off">
+    </label>
+  </div>
+
+  <div class="unitrow">
+    <label><input type="checkbox" id="fMilliliters"> Serving is in millilitres</label>
+  </div>
+
+  <nav class="bottombar">
+    <button id="btnClear" type="button">CLR</button>
+    <a class="linkbtn primary" href="scan.html">📷 Scan a label</a>
+  </nav>
+
+  <p class="footnote">
+    Nothing here leaves the device. What you type is kept on this phone so the
+    numbers are still there when you come back.
+  </p>
+</main>
+
+<script src="label-parser.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>

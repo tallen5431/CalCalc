@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nutrition Facts fixture</title>
+<!-- A replica of the FDA's example panel, used to generate test frames for the
+     end-to-end harness. Rendered rather than photographed so the expected
+     numbers are known exactly; tests/e2e.js then degrades the render the way a
+     phone camera does before feeding it to the reader. -->
+<style>
+  body { margin: 0; background: #fff; }
+  .panel {
+    width: 320px;
+    padding: 6px 10px 10px;
+    font-family: Helvetica, Arial, sans-serif;
+    color: #000;
+    border: 2px solid #000;
+    box-sizing: border-box;
+  }
+  .title { font-size: 40px; font-weight: 900; letter-spacing: -1px; line-height: 1; }
+  .rule { border-top: 1px solid #000; margin: 2px 0; }
+  .thick { border-top: 10px solid #000; margin: 3px 0; }
+  .medium { border-top: 5px solid #000; margin: 3px 0; }
+  .row { display: flex; justify-content: space-between; font-size: 14px; padding: 1px 0; }
+  .row.b { font-weight: 700; }
+  .indent { padding-left: 14px; }
+  .indent2 { padding-left: 28px; }
+  .servings { font-size: 15px; }
+  .serving-size { display: flex; justify-content: space-between; font-size: 17px; font-weight: 700; }
+  .cal-row { display: flex; justify-content: space-between; align-items: flex-end; }
+  .cal-label { font-size: 26px; font-weight: 900; }
+  .cal-value { font-size: 44px; font-weight: 900; line-height: 1; }
+  .amount { font-size: 12px; font-weight: 700; }
+  .dv { text-align: right; font-size: 12px; font-weight: 700; }
+  .foot { font-size: 10px; line-height: 1.25; padding-top: 4px; }
+</style>
+</head>
+<body>
+<div class="panel" id="panel">
+  <div class="title">Nutrition Facts</div>
+  <div class="rule"></div>
+  <div class="servings">8 servings per container</div>
+  <div class="serving-size"><span>Serving size</span><span>2/3 cup (55g)</span></div>
+  <div class="thick"></div>
+  <div class="amount">Amount per serving</div>
+  <div class="cal-row"><span class="cal-label">Calories</span><span class="cal-value">230</span></div>
+  <div class="medium"></div>
+  <div class="dv">% Daily Value*</div>
+  <div class="rule"></div>
+  <div class="row b"><span>Total Fat 8g</span><span>10%</span></div>
+  <div class="rule"></div>
+  <div class="row indent"><span>Saturated Fat 1g</span><span>5%</span></div>
+  <div class="rule"></div>
+  <div class="row indent"><span><i>Trans</i> Fat 0g</span><span></span></div>
+  <div class="rule"></div>
+  <div class="row b"><span>Cholesterol 0mg</span><span>0%</span></div>
+  <div class="rule"></div>
+  <div class="row b"><span>Sodium 160mg</span><span>7%</span></div>
+  <div class="rule"></div>
+  <div class="row b"><span>Total Carbohydrate 37g</span><span>13%</span></div>
+  <div class="rule"></div>
+  <div class="row indent"><span>Dietary Fiber 4g</span><span>14%</span></div>
+  <div class="rule"></div>
+  <div class="row indent"><span>Total Sugars 12g</span><span></span></div>
+  <div class="rule"></div>
+  <div class="row indent2"><span>Includes 10g Added Sugars</span><span>20%</span></div>
+  <div class="rule"></div>
+  <div class="row b"><span>Protein 3g</span><span></span></div>
+  <div class="medium"></div>
+  <div class="row"><span>Vitamin D 2mcg</span><span>10%</span></div>
+  <div class="rule"></div>
+  <div class="row"><span>Calcium 260mg</span><span>20%</span></div>
+  <div class="rule"></div>
+  <div class="row"><span>Iron 8mg</span><span>45%</span></div>
+  <div class="rule"></div>
+  <div class="row"><span>Potassium 240mg</span><span>6%</span></div>
+  <div class="thick"></div>
+  <div class="foot">* The % Daily Value (DV) tells you how much a nutrient in a
+    serving of food contributes to a daily diet. 2,000 calories a day is used
+    for general nutrition advice.</div>
+</div>
+</body>
+</html>
