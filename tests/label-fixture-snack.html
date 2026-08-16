@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nutrition Facts fixture — snack box</title>
+<!-- A Little Debbie Swiss Rolls box, transcribed as printed. This is the panel
+     that failed in a shop, and it is here because snack packaging is where the
+     awkward parts live:
+
+       - the serving is "2 cakes (95g)" — a count of cakes in front of the weight
+       - four fat sub-lines under the total, not two
+       - the vitamin row is abbreviated ("Vit. D", "Potas.")
+       - and the footnote, which contains the word "calories" and the number
+         "2,000" and once had this reporting the box as 0 calories -->
+<style>
+  body { margin: 0; background: #fff; }
+  .panel {
+    width: 330px;
+    padding: 5px 9px 9px;
+    font-family: Helvetica, Arial, sans-serif;
+    color: #000;
+    border: 2px solid #000;
+    box-sizing: border-box;
+  }
+  .title { font-size: 36px; font-weight: 900; letter-spacing: -1px; line-height: 1.05; }
+  .rule { border-top: 1px solid #000; margin: 2px 0; }
+  .thick { border-top: 9px solid #000; margin: 3px 0; }
+  .medium { border-top: 5px solid #000; margin: 3px 0; }
+  .row { display: flex; justify-content: space-between; font-size: 13.5px; padding: 1px 0; }
+  .row.b { font-weight: 700; }
+  .indent { padding-left: 13px; }
+  .indent2 { padding-left: 26px; }
+  .servings { font-size: 14px; }
+  .serving-size { display: flex; justify-content: space-between; font-size: 16px; font-weight: 700; }
+  .cal-row { display: flex; justify-content: space-between; align-items: flex-end; }
+  .cal-label { font-size: 25px; font-weight: 900; }
+  .cal-value { font-size: 42px; font-weight: 900; line-height: 1; }
+  .amount { font-size: 11.5px; font-weight: 700; }
+  .dv { text-align: right; font-size: 11.5px; font-weight: 700; }
+  .foot { font-size: 9.5px; line-height: 1.25; padding-top: 4px; }
+</style>
+</head>
+<body>
+<div class="panel" id="panel">
+  <div class="title">Nutrition Facts</div>
+  <div class="rule"></div>
+  <div class="servings">6 servings per container</div>
+  <div class="serving-size"><span>Serving size</span><span>2 cakes (95g)</span></div>
+  <div class="thick"></div>
+  <div class="amount">Amount per serving</div>
+  <div class="cal-row"><span class="cal-label">Calories</span><span class="cal-value">400</span></div>
+  <div class="medium"></div>
+  <div class="dv">% Daily Value*</div>
+  <div class="rule"></div>
+  <div class="row b"><span>Total Fat 17g</span><span>22%</span></div>
+  <div class="rule"></div>
+  <div class="row indent"><span>Saturated Fat 9g</span><span>45%</span></div>
+  <div class="rule"></div>
+  <div class="row indent"><span><i>Trans</i> Fat 0g</span><span></span></div>
+  <div class="rule"></div>
+  <div class="row indent"><span>Polyunsaturated Fat 3g</span><span></span></div>
+  <div class="rule"></div>
+  <div class="row indent"><span>Monounsaturated Fat 4.5g</span><span></span></div>
+  <div class="rule"></div>
+  <div class="row b"><span>Cholesterol 15mg</span><span>5%</span></div>
+  <div class="rule"></div>
+  <div class="row b"><span>Sodium 200mg</span><span>9%</span></div>
+  <div class="rule"></div>
+  <div class="row b"><span>Total Carbohydrate 60g</span><span>22%</span></div>
+  <div class="rule"></div>
+  <div class="row indent"><span>Dietary Fiber 1g</span><span>4%</span></div>
+  <div class="rule"></div>
+  <div class="row indent"><span>Total Sugars 42g</span><span></span></div>
+  <div class="rule"></div>
+  <div class="row indent2"><span>Includes 42g Added Sugars</span><span>84%</span></div>
+  <div class="rule"></div>
+  <div class="row b"><span>Protein 2g</span><span></span></div>
+  <div class="medium"></div>
+  <div class="row"><span>Vit. D 0mcg</span><span>0%</span></div>
+  <div class="rule"></div>
+  <div class="row"><span>Calcium 20mg</span><span>0%</span></div>
+  <div class="rule"></div>
+  <div class="row"><span>Iron 1.6mg</span><span>8%</span></div>
+  <div class="rule"></div>
+  <div class="row"><span>Potas. 80mg</span><span>0%</span></div>
+  <div class="thick"></div>
+  <div class="foot">* The % Daily Value (DV) tells you how much a nutrient in a
+    serving of food contributes to a daily diet. 2,000 calories a day is used
+    for general nutrition advice.</div>
+</div>
+</body>
+</html>

@@ -193,15 +193,33 @@
   var CAL_RUN = DC + '{1,4}(?:\\s{1,2}\\d{1,3}(?!\\s*%)){0,2}';
   var CAL_PATTERNS = [
     new RegExp(CAL_WORD + '\\s*(?:per\\s+serving)?\\s*[:\\-]?\\s*(' + CAL_RUN + ')' + TOKEN_END, 'i'),
-    new RegExp('(' + DC + '{1,4})' + TOKEN_END + '\\s*' + CAL_WORD + '\\b', 'i')
+    // The number may arrive before the word — reading order is not guaranteed,
+    // least of all on a panel photographed side-on where the calorie figure is
+    // set far larger than the word beside it.
+    //
+    // The leading guard is what stops that reading the footnote. Every panel
+    // ends with "2,000 calories a day is used for general nutrition advice",
+    // and without a check on what comes *before* the digits, the "000" of
+    // "2,000" matches — reporting a Swiss roll as **0 calories**. Written as a
+    // consumed prefix rather than a lookbehind, which iOS Safari only learned
+    // in 16.4 and which would throw on parse for anyone older.
+    new RegExp('(?:^|[^\\dOoQlIiSsBbZz.,])(' + DC + '{1,4})' + TOKEN_END + '\\s*' + CAL_WORD + '\\b', 'i')
   ];
+
+  // The footnote is boilerplate, it is on every panel, and it contains the one
+  // word this parser anchors on. It is removed before the search rather than
+  // guarded against inside it, because it has nothing to say about the food.
+  var CAL_FOOTNOTE = new RegExp(
+    '[\\d,.]{1,7}\\s*' + CAL_WORD + '\\s+a\\s+day', 'gi');
 
   var MAX_CAL_DIGITS = 4;
 
   function findCalories(text) {
     // Strip the old panel's "from fat" line before looking, so it can neither
     // be matched directly nor sit between the anchor word and the real number.
-    var cleaned = text.replace(new RegExp(CAL_WORD + '\\s*from\\s*fat\\s*' + DC + '{1,4}', 'gi'), ' ');
+    var cleaned = text
+      .replace(new RegExp(CAL_WORD + '\\s*from\\s*fat\\s*' + DC + '{1,4}', 'gi'), ' ')
+      .replace(CAL_FOOTNOTE, ' ');
 
     for (var i = 0; i < CAL_PATTERNS.length; i++) {
       var m = cleaned.match(CAL_PATTERNS[i]);
@@ -525,6 +543,14 @@
     if (calories === null) {
       // No headline at all — the macros are the only reading there is. Worth
       // showing, but never as though it had been read off the panel.
+      return { calories: predicted, corrected: false, disagrees: false, source: 'macros' };
+    }
+    // A zero is not a small number here, it is a contradiction. Nothing can
+    // have no calories and still have grams of fat, carbohydrate and protein in
+    // it — a genuinely calorie-free food has 0g of all three, which predicts 0
+    // and never reaches this far. So the zero is a misread, and multiplying it
+    // by ten will not rescue it: the macros are the only reading left.
+    if (calories === 0) {
       return { calories: predicted, corrected: false, disagrees: false, source: 'macros' };
     }
     if (agrees(calories, predicted)) {

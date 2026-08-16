@@ -73,6 +73,17 @@ var PANELS = [
       fat: 8, carbs: 12, protein: 8
     },
     price: 3.24
+  },
+  {
+    // The panel that failed in a shop. Four fat sub-lines, a serving measured
+    // in cakes, and a footnote that once had this reporting 0 calories.
+    name: 'snack box (Swiss rolls)',
+    fixture: '/tests/label-fixture-snack.html',
+    expected: {
+      calories: 400, servingGrams: 95, servingsPerContainer: 6,
+      fat: 17, carbs: 60, protein: 2
+    },
+    price: 2.98
   }
 ];
 

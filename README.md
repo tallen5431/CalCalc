@@ -119,31 +119,36 @@ an angle, slightly out of focus, with a glare band across the packaging.
 `tests/e2e.js` runs the real shipping pipeline: canvas preprocessing, Tesseract,
 the parser, the arithmetic.
 
-Two panel layouts are tested, because they are not variations on a theme:
+Three panels are tested, because they are not variations on a theme:
 
 - **the table** — the FDA's example panel, the one on most boxes
 - **the linear panel** — the same information as one running sentence, which is
   what a gallon jug or a small package prints when there is no room for the
   table. Abbreviated (`Serv. size`), no "per container" anywhere, a serving in
   millilitres, and a comma after every number.
+- **a snack box** — a Little Debbie Swiss Rolls panel off a shelf. Four fat
+  sub-lines instead of two, a serving measured in cakes, and an abbreviated
+  vitamin row.
 
-| Frame | Table | Linear |
-|---|---|---|
-| Clean render | correct | correct |
-| 4° angle, 1.1px blur, mild glare | correct | correct |
-| Half resolution | correct | correct |
-| 6° angle, heavy glare, low contrast | correct¹ | correct² |
-| **Side-on package (90°)** | correct | correct |
-| **Side-on the other way (270°)** | correct | correct |
-| **Upside down (180°)** | correct | correct |
+Each goes through seven frames — 21 reads:
+
+| Frame | Table | Linear | Snack box |
+|---|---|---|---|
+| Clean render | correct | correct | correct¹ |
+| 4° angle, 1.1px blur, mild glare | correct | correct | correct |
+| Half resolution | correct | correct | correct |
+| 6° angle, heavy glare, low contrast | correct¹ | correct² | correct |
+| Side-on package (90°) | correct | correct | correct |
+| Side-on the other way (270°) | correct | correct | correct |
+| Upside down (180°) | correct | correct | correct |
 
 ¹ minus the servings count · ² minus fat and carbohydrate
 
-Those two footnotes are the interesting part. Glare turned the "8" of "8
-servings per container" into a "g" on one panel and ate the word "Total" from
-two macro lines on the other, and in both cases the reader left the field
-**empty** rather than guessing — see below. Calories, serving size and calories
-per gram were right on every frame of both layouts.
+Those footnotes are the interesting part. Glare turned the "8" of "8 servings
+per container" into a "g" on one panel and ate the word "Total" from two macro
+lines on another, and in every case the reader left the field **empty** rather
+than guessing — see below. Calories, serving size and calories per gram were
+right on all 21 frames.
 
 Two agreeing reads are required before a verdict is trusted, so call it **2–4
 seconds** to a confirmed answer on phone-class hardware.
@@ -216,6 +221,7 @@ was handled:
 | The macro units go too | `Total Fat 8g` → `Total Fat 89` | Same "g", under worse contrast. |
 | "Total" is eaten | `Total Fat 8g` → `Fat 8g` | Leaves the sub-line (`Sat. Fat 5g`) as the only fat line the reader can see. |
 | The "g" arrives twice | `Total Carb. 12g` → `129g` | The unit is read as a digit *and* kept, giving an ordinary-looking wrong number. |
+| The footnote answers instead | `2,000 calories a day` | Every panel ends with it, and it contains the anchor word. Its "000" reported a box of cakes as **0 calories**. |
 
 The first two are the dangerous ones: both produce a complete, plausible number
 from a line the engine otherwise read perfectly. `Calories 2 30` read naively is
@@ -401,7 +407,7 @@ rows into the journal with a plain form POST — measured, not theorised.
 ## Tests
 
 ```sh
-npm test                        # 312 checks, no browser, no dependencies
+npm test                        # 322 checks, no browser, no dependencies
 ```
 
 The end-to-end harness needs a browser and is deliberately not part of that:

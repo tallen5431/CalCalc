@@ -305,6 +305,52 @@ group('numbers that must never be mistaken for calories', function () {
   check('the whole number is read, not a prefix of it', pct.caloriesRead, 230);
   check('so no correction is needed', pct.caloriesCorrected, false);
 
+  /* The footnote. Every panel ends with "2,000 calories a day is used for
+     general nutrition advice", and it contains the one word this parser
+     anchors on.
+
+     Reading a number that sits before the word — which has to be allowed,
+     because on a side-on panel the huge calorie figure often arrives ahead of
+     its label — matched the "000" of "2,000" and reported a Swiss roll as
+     **0 calories**. That is what a real scan did: serving size and every macro
+     read perfectly, and the headline came back zero. */
+  var FOOTNOTE = '* The % Daily Value (DV) tells you how much a nutrient in a serving of ' +
+    'food contributes to a daily diet. 2,000 calories a day is used for general nutrition advice.';
+
+  check('the footnote is not a calorie line',
+        LabelParser.parse('Serving size (95g) ' + FOOTNOTE).caloriesRead, null);
+  check('nor is a fragment of "2,000"',
+        LabelParser.parse('Serving size (95g) 2,000 calories a day').caloriesRead, null);
+
+  // ...while a number genuinely in front of the word still reads, since that
+  // is the reason the pattern exists.
+  check('a number before the word still reads',
+        LabelParser.parse('400 Calories Serving size (95g) Total Fat 17g ' +
+                          'Total Carbohydrate 60g Protein 2g').calories, 400);
+
+  // The headline and the footnote together, which is every real panel.
+  var whole = LabelParser.parse(
+    'Serving size 2 cakes (95g) Amount per serving Calories 400 % Daily Value* ' +
+    'Total Fat 17g Total Carbohydrate 60g Protein 2g ' + FOOTNOTE);
+  check('the headline wins over the footnote', whole.calories, 400);
+  check('and is confirmed', whole.caloriesConfirmed, true);
+
+  /* A zero contradicted by the macros. Nothing has no calories and grams of
+     fat, carbohydrate and protein in it — so the zero is a misread, and no
+     power of ten rescues a zero. The macros are the only reading left. */
+  var zero = LabelParser.parse(
+    'Serving size 2 cakes (95g) Calories 0 Total Fat 17g Total Carbohydrate 60g Protein 2g');
+  check('an impossible zero falls back to the macros', zero.calories, 401);
+  check('and says where the figure came from', zero.caloriesFromMacros, true);
+  check('rather than raising a disagreement', zero.caloriesDisagree, false);
+
+  // A genuinely calorie-free drink has 0g of everything, predicts 0, and must
+  // keep its zero.
+  var water = LabelParser.parse(
+    'Serving size (355ml) Calories 0 Total Fat 0g Total Carbohydrate 0g Protein 0g');
+  check('a real zero survives', water.calories, 0);
+  check('and is not attributed to the macros', water.caloriesFromMacros, false);
+
   // A panel with no calorie word at all should not invent one from the
   // percentages and milligrams that fill the rest of the table.
   var q = LabelParser.parse('Sodium 160mg 7% Calcium 260mg 20% Iron 8mg 45% Potassium 240mg 6%');
