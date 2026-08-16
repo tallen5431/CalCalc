@@ -375,6 +375,25 @@ The OCR engine is cached on first use, so after that it reads labels in a shop
 with no signal. `vendor/` is ~15MB in the repo so that any phone gets a core
 build it can run; a given phone downloads only the ~4MB variant it needs, once.
 
+### Getting an update onto the phone
+
+The app's own files are served **network-first**: reload the page and the phone
+has the new version. Only the OCR engine is cache-first, because it is large,
+immutable and versioned by filename.
+
+It was not always this way, and the cost was real — the service worker served
+the app cache-first and its version had to be bumped by hand, which it was not
+through four commits of reader fixes. A phone that had opened the app once kept
+reading labels with the old parser, reproducing a bug against code that no
+longer existed. A stale app looks exactly like an unfixed one.
+
+So **the reader prints its version**, at the bottom of the 💲 Price sheet:
+`Reader 2026-08-16.5`. If a label misreads, that string says whether the phone
+is running what you think it is. It is bumped whenever the reading changes.
+
+If a phone is somehow still stale: open the page, pull to refresh, or clear the
+site data for the origin in the browser's settings.
+
 ## Privacy
 
 **Camera frames are read and discarded.** No image is ever stored or

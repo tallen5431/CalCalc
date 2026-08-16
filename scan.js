@@ -725,6 +725,12 @@
     navigator.serviceWorker.register('sw.js').catch(function () {});
   }
 
+  // Which reader this phone is actually running. A cached app looks exactly
+  // like an unfixed one from the outside, and telling them apart used to mean
+  // guessing.
+  var note = document.getElementById('engineNote');
+  if (note) note.textContent = note.textContent + ' Reader ' + LabelParser.version + '.';
+
   (async function () {
     el.reticle.classList.toggle('full', settings.fullFrame);
     render(0);

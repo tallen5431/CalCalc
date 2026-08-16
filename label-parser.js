@@ -838,7 +838,16 @@
     return (fallback === undefined || fallback === null || !isFinite(fallback)) ? null : fallback;
   }
 
+  /* Shown on screen, and bumped whenever the reading changes.
+   *
+   * A phone had been running a four-commits-old reader out of the service
+   * worker's cache, reproducing a bug against code that no longer existed —
+   * and there was no way to tell that from the outside, because a stale app
+   * looks exactly like an unfixed one. Now there is. */
+  var VERSION = '2026-08-16.5';
+
   return {
+    version: VERSION,
     parse: parse,
     metrics: metrics,
     convert: convert,
