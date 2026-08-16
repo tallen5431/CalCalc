@@ -419,9 +419,13 @@
   var PROTEIN_PATTERNS = [
     new RegExp('prote[li1|]ns?\\s*[:\\-]?\\s*(' + NUM + ')\\s*' + GU + '\\b', 'i')
   ];
+  // "Dietary Fiber <1g" is how a panel writes a rounded-down amount, and it is
+  // common on biscuits and cakes. The "<" has to be allowed for or the line
+  // does not parse at all.
+  var LT = '[<~≤]?\\s*';
   var FIBER_PATTERNS = [
-    new RegExp('d[li1|]etary\\s*f[li1|]b(?:er|re)\\s*[:\\-]?\\s*(' + NUM + ')\\s*' + GU + '\\b', 'i'),
-    new RegExp('f[li1|]b(?:er|re)\\s*[:\\-]?\\s*(' + NUM + ')\\s*' + GU + '\\b', 'i')
+    new RegExp('d[li1|]etary\\s*f[li1|]b(?:er|re)\\s*[:\\-]?\\s*' + LT + '(' + NUM + ')\\s*' + GU + '\\b', 'i'),
+    new RegExp('f[li1|]b(?:er|re)\\s*[:\\-]?\\s*' + LT + '(' + NUM + ')\\s*' + GU + '\\b', 'i')
   ];
   var SUGAR_PATTERNS = [
     new RegExp('tota[li1|]\\s*sugars?\\s*[:\\-]?\\s*(' + NUM + ')\\s*' + GU + '\\b', 'i'),
@@ -459,6 +463,44 @@
     return macros.fat * KCAL_PER_G_FAT +
            macros.carbs * KCAL_PER_G_CARB +
            macros.protein * KCAL_PER_G_PROTEIN;
+  }
+
+  /* The other direction of the same repair.
+   *
+   * The gram unit is a "9" to this engine, and sometimes it arrives as *both*:
+   * "Total Carb. 12g" comes back "129g", which parses as 129 grams because the
+   * "g" really is there after it. Nothing about that line looks wrong on its
+   * own — 129 is a perfectly ordinary number.
+   *
+   * The calorie figure is what catches it. When the panel states its calories
+   * and the macros do not add up to them, one of the two was misread; and if
+   * dropping a trailing digit from exactly one macro makes them agree, that
+   * macro is the one. Same discipline as the calorie recovery: only when
+   * exactly one candidate fits, so an ambiguous reading stays ambiguous, and
+   * always reported rather than silently applied.
+   *
+   * Without this a good reading raised a false alarm — "the calories and the
+   * macros disagree, check the calorie line" — on a panel whose calorie line
+   * was read perfectly. A check that cries wolf is worse than no check.
+   */
+  var MACRO_FIELDS = ['fat', 'carbs', 'protein'];
+
+  function repairMacros(macros, calories) {
+    var winners = [];
+    MACRO_FIELDS.forEach(function (field) {
+      var v = macros[field];
+      // Only a whole number with a digit to spare. A decimal reading like
+      // "4.5g" was printed with its point intact and is not this artefact.
+      if (v === null || v < 10 || v !== Math.floor(v)) return;
+      var trimmed = Math.floor(v / 10);
+      var candidate = {};
+      MACRO_FIELDS.forEach(function (k) { candidate[k] = macros[k]; });
+      candidate[field] = trimmed;
+      if (agrees(calories, atwater(candidate))) {
+        winners.push({ field: field, macros: candidate });
+      }
+    });
+    return winners.length === 1 ? winners[0] : null;
   }
 
   function agrees(calories, predicted) {
@@ -507,6 +549,21 @@
     var macros = findMacros(text);
     var predicted = atwater(macros);
     var read = findCalories(text);
+
+    // Before deciding the two sources disagree, check whether one macro line
+    // picked up a stray digit from the gram symbol beside it. Only attempted
+    // when the panel's own calorie figure was read, since that is the anchor
+    // the repair is measured against.
+    var macroCorrected = null;
+    if (read !== null && predicted !== null && !agrees(read, predicted)) {
+      var repair = repairMacros(macros, read);
+      if (repair) {
+        macros = repair.macros;
+        predicted = atwater(macros);
+        macroCorrected = repair.field;
+      }
+    }
+
     var fixed = reconcile(read, predicted);
 
     var serving = findServing(text);
@@ -573,6 +630,10 @@
       fat: macros.fat,
       carbs: macros.carbs,
       protein: macros.protein,
+      // Which macro line had a digit taken back off it, or null. Reported for
+      // the same reason every other correction is: it is a guess about a
+      // character, and the person holding the package can see the real one.
+      macroCorrected: macroCorrected,
       fiber: macros.fiber,
       sugars: macros.sugars,
 

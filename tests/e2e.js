@@ -34,11 +34,20 @@ try {
  * ever sees it. Each one is something a phone actually does to a label: it is
  * held at an angle, it is not quite in focus, and the shelf light glares off
  * the packaging. */
+/* `rotate` is the small skew of a hand-held shot. `turn` is a quarter turn of
+ * the whole package, which is a completely different thing: a panel printed on
+ * the side of a box is side-on in the frame however steadily you hold the
+ * phone, and sideways text yields the reader nothing whatsoever — not a poor
+ * reading, no reading at all. Two of the four frames below are turned for that
+ * reason. */
 var VARIANTS = [
-  { name: 'clean render', scale: 1, blur: 0, glare: 0, contrast: 1, rotate: 0 },
-  { name: 'camera sim: slight angle + blur', scale: 1, blur: 1.1, glare: 0.18, contrast: 0.85, rotate: 4 },
-  { name: 'camera sim: half resolution', scale: 0.5, blur: 0.8, glare: 0.12, contrast: 0.9, rotate: 2 },
-  { name: 'camera sim: glare and low contrast', scale: 1, blur: 1.3, glare: 0.35, contrast: 0.7, rotate: -6 }
+  { name: 'clean render', scale: 1, blur: 0, glare: 0, contrast: 1, rotate: 0, turn: 0 },
+  { name: 'camera sim: slight angle + blur', scale: 1, blur: 1.1, glare: 0.18, contrast: 0.85, rotate: 4, turn: 0 },
+  { name: 'camera sim: half resolution', scale: 0.5, blur: 0.8, glare: 0.12, contrast: 0.9, rotate: 2, turn: 0 },
+  { name: 'camera sim: glare and low contrast', scale: 1, blur: 1.3, glare: 0.35, contrast: 0.7, rotate: -6, turn: 0 },
+  { name: 'side-on package (90°)', scale: 1, blur: 0.9, glare: 0.15, contrast: 0.88, rotate: 3, turn: 90 },
+  { name: 'side-on the other way (270°)', scale: 1, blur: 0.9, glare: 0.12, contrast: 0.9, rotate: -3, turn: 270 },
+  { name: 'upside down (180°)', scale: 1, blur: 0.9, glare: 0.12, contrast: 0.9, rotate: 2, turn: 180 }
 ];
 
 /* Both panel layouts. They are not variations on a theme — the linear one uses
@@ -184,6 +193,7 @@ var REQUIRED = ['calories', 'servingGrams'];
       if (p.caloriesFromMacros) flags.push('calories came from the macros');
       if (p.servingUnitInferred) flags.push('unit assumed');
       if (p.densityUncertain) flags.push('DENSITY UNCERTAIN');
+      if (r.out.rotation) flags.push('turned ' + r.out.rotation + '° to read it');
       if (flags.length) console.log('        ' + flags.join(' · '));
       // Named, not hidden. A frame that quietly dropped half the panel while
       // reporting a pass is how a harness stops being evidence of anything.
@@ -232,11 +242,13 @@ function degradeInPage(args) {
       var v = args.v;
       var w = Math.round(img.width * v.scale);
       var h = Math.round(img.height * v.scale);
+      var turn = v.turn || 0;
+      var quarter = (turn === 90 || turn === 270);
       // Room for the rotation to swing the corners out without clipping them.
       var pad = Math.round(Math.max(w, h) * 0.12);
       var c = document.createElement('canvas');
-      c.width = w + pad * 2;
-      c.height = h + pad * 2;
+      c.width = (quarter ? h : w) + pad * 2;
+      c.height = (quarter ? w : h) + pad * 2;
       var g = c.getContext('2d');
 
       g.fillStyle = '#c9c9c9';        // the shelf behind the package
@@ -244,7 +256,7 @@ function degradeInPage(args) {
 
       g.save();
       g.translate(c.width / 2, c.height / 2);
-      g.rotate(v.rotate * Math.PI / 180);
+      g.rotate((v.rotate + turn) * Math.PI / 180);
       if (v.blur) g.filter = 'blur(' + v.blur + 'px) contrast(' + v.contrast + ')';
       else if (v.contrast !== 1) g.filter = 'contrast(' + v.contrast + ')';
       g.drawImage(img, -w / 2, -h / 2, w, h);

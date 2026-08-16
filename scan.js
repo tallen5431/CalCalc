@@ -246,22 +246,37 @@
     };
   }
 
-  // Upscale and flatten to high-contrast grey. A nutrition panel is black on
-  // white with fine rules between the lines, and the small print — the grams
-  // after each macro — is what the cross-check depends on.
-  function grab(source, rect) {
+  // Upscale, turn upright, and flatten to high-contrast grey. A nutrition panel
+  // is black on white with fine rules between the lines, and the small print —
+  // the grams after each macro — is what the cross-check depends on.
+  //
+  // The turn is not a nicety. A panel is usually printed on the side of a
+  // package, so a phone held normally sees it lying on its side, and the reader
+  // gets **nothing at all** from sideways text — not a poor reading, no reading:
+  // calories, serving size and every macro come back null at 90°, 180° and
+  // 270°. Measured on the harness.
+  function grab(source, rect, rotation) {
     var sw = rect ? rect.w : source.videoWidth || source.width;
     var sh = rect ? rect.h : source.videoHeight || source.height;
     var scale = Math.min(2, MAX_OCR_WIDTH / sw);
     if (!isFinite(scale) || scale <= 0) scale = 1;
 
-    el.frame.width = Math.round(sw * scale);
-    el.frame.height = Math.round(sh * scale);
+    var w = Math.round(sw * scale);
+    var h = Math.round(sh * scale);
+    // A quarter turn swaps the canvas: a tall crop becomes a wide one.
+    var quarter = (rotation === 90 || rotation === 270);
+    el.frame.width = quarter ? h : w;
+    el.frame.height = quarter ? w : h;
+
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
+    ctx.save();
+    ctx.translate(el.frame.width / 2, el.frame.height / 2);
+    if (rotation) ctx.rotate(rotation * Math.PI / 180);
 
-    if (rect) ctx.drawImage(source, rect.x, rect.y, rect.w, rect.h, 0, 0, el.frame.width, el.frame.height);
-    else ctx.drawImage(source, 0, 0, el.frame.width, el.frame.height);
+    if (rect) ctx.drawImage(source, rect.x, rect.y, rect.w, rect.h, -w / 2, -h / 2, w, h);
+    else ctx.drawImage(source, -w / 2, -h / 2, w, h);
+    ctx.restore();
 
     var img = ctx.getImageData(0, 0, el.frame.width, el.frame.height);
     var p = img.data;
@@ -276,17 +291,60 @@
 
   /* ---------- scanning ---------- */
 
-  async function readOnce(source, rect) {
-    var canvas = grab(source, rect);
+  async function readOnce(source, rect, rotation) {
+    var canvas = grab(source, rect, rotation || 0);
     var t = performance.now();
     var res = await worker.recognize(canvas);
     var ms = Math.round(performance.now() - t);
-    return { parsed: LabelParser.parse(res.data.text), ms: ms };
+    return { parsed: LabelParser.parse(res.data.text), ms: ms, rotation: rotation || 0 };
+  }
+
+  /* ---------- which way up ----------
+   *
+   * Upright first, then the two side-on turns, then upside down — the order a
+   * package is actually likely to be held. The reader sticks to whichever last
+   * worked, so a shelf of side-printed packages costs one probe and not one per
+   * frame; and it only goes looking again after several failed reads, so a
+   * panel that has merely gone out of focus does not send it hunting.
+   */
+  var ORIENTATIONS = [0, 90, 270, 180];
+  var orientation = 0;
+  var probe = 0;
+  var MISSES_TO_TURN = 3;
+
+  function nextOrientation() {
+    probe = (probe + 1) % ORIENTATIONS.length;
+    orientation = ORIENTATIONS[probe];
+  }
+
+  function keepOrientation(rotation) {
+    orientation = rotation;
+    probe = ORIENTATIONS.indexOf(rotation);
+    if (probe < 0) probe = 0;
+  }
+
+  // How good a reading is, for choosing between the four turns of a still. A
+  // parse the macros independently confirm beats one they do not, and any
+  // complete parse beats a partial one — sideways text occasionally yields a
+  // stray number, and it must never outrank a real reading.
+  function score(parsed) {
+    if (!parsed) return 0;
+    var s = 0;
+    if (parsed.calories !== null) s += 2;
+    if (parsed.servingGrams !== null) s += 2;
+    if (parsed.complete) s += 4;
+    if (parsed.caloriesConfirmed) s += 4;
+    if (parsed.servingsPerContainer !== null) s += 1;
+    return s;
   }
 
   function consider(parsed) {
     if (!parsed.complete) {
       misses++;
+      // Nothing is coming back. Before giving up on the reading, try the panel
+      // the other way up — far and away the likeliest reason a label in the box
+      // produces no numbers at all.
+      if (misses % MISSES_TO_TURN === 0) nextOrientation();
       if (misses >= MISSES_TO_RESET) { locked = false; agree = 0; lastSig = null; lastParsed = null; }
       return;
     }
@@ -309,7 +367,12 @@
       if (frozen || busy || el.video.readyState < 2) { await sleep(80); continue; }
       busy = true;
       try {
-        var out = await readOnce(el.video, settings.fullFrame ? null : sourceRect());
+        var turn = orientation;
+        var out = await readOnce(el.video, settings.fullFrame ? null : sourceRect(), turn);
+        // A turn that produced a reading is the turn this package is printed
+        // in, so it becomes the one used from now on rather than being probed
+        // for again on the next frame.
+        if (out.parsed.complete) keepOrientation(turn);
         consider(out.parsed);
         render(out.ms);
       } catch (e) {
@@ -321,6 +384,23 @@
   }
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  // Reads a still every way up and keeps the best. Starts from whichever turn
+  // last worked, so a run of side-printed packages costs one pass each.
+  async function readBest(img) {
+    var order = [orientation].concat(ORIENTATIONS.filter(function (o) { return o !== orientation; }));
+    var best = null, total = 0;
+    for (var i = 0; i < order.length; i++) {
+      status('reading photo… ' + (order[i] ? order[i] + '°' : 'upright'));
+      var out = await readOnce(img, null, order[i]);
+      total += out.ms;
+      if (!best || score(out.parsed) > score(best.parsed)) best = out;
+      // Confirmed by the panel's own macros — there is nothing better to find.
+      if (out.parsed.complete && out.parsed.caloriesConfirmed) break;
+    }
+    best.ms = total;
+    return best;
+  }
 
   /* ---------- render ---------- */
 
@@ -404,9 +484,16 @@
       el.warn.hidden = true;
     }
 
+    // The turn is worth showing. When the reader has decided a package is
+    // side-on it changes what the box on screen should be lined up with, and a
+    // scanner silently reading the frame a different way up than it is drawn is
+    // hard to make sense of from the outside.
+    var turned = orientation ? ' · ' + (orientation === 180 ? 'upside down' : 'sideways') : '';
+    el.reticle.classList.toggle('sideways', orientation === 90 || orientation === 270);
+
     status((ms ? ms + 'ms · ' : '') +
       (locked ? 'confirmed' : (m.ready ? 'confirming…' : 'searching…')) +
-      (settings.fullFrame ? ' · whole frame' : ' · in box'));
+      (settings.fullFrame ? ' · whole frame' : ' · in box') + turned);
   }
 
   // A read can warrant more than one note at once: a corrected calorie figure
@@ -430,6 +517,10 @@
     }
     if (p.servingCorrected) {
       notes.push('Recovered a digit in the serving weight — check it.');
+    }
+    if (p.macroCorrected) {
+      notes.push('The ' + (p.macroCorrected === 'carbs' ? 'carbohydrate' : p.macroCorrected) +
+                 ' line picked up a stray digit from its "g"; the calorie figure says so.');
     }
     if (p.servingUnitInferred) {
       notes.push('The unit after the serving size was unreadable and has been taken as grams.');
@@ -474,11 +565,14 @@
       frozen = true;
       document.body.classList.add('frozen');
       el.btnFreeze.textContent = '▶ Scan';
-      status('reading photo…');
-      // A still has no successive frames to agree with, so trust one good read.
-      var out = await readOnce(img, null);
+      // A still has no successive frames to agree with, and no second chance
+      // either — so rather than guessing which way up it is, all four turns are
+      // read and the best kept. It stops early on a reading the macros confirm,
+      // which is the common case and usually the first turn tried.
+      var out = await readBest(img);
       lastParsed = out.parsed;
       locked = out.parsed.complete;
+      if (out.parsed.complete) keepOrientation(out.rotation);
       render(out.ms);
       URL.revokeObjectURL(img.src);
     };
@@ -672,15 +766,18 @@
 
   // Exposed so a test harness can drive the same pipeline headlessly.
   window.__scan = {
+    // The same path the 📷 Photo button takes, orientation search and all, so
+    // the harness measures what a person actually gets.
     readImage: async function (src) {
       var img = new Image();
       await new Promise(function (r, j) { img.onload = r; img.onerror = j; img.src = src; });
-      var out = await readOnce(img, null);
+      var out = await readBest(img);
       lastParsed = out.parsed;
       locked = out.parsed.complete;
+      if (out.parsed.complete) keepOrientation(out.rotation);
       render(out.ms);
       return {
-        parsed: out.parsed, ms: out.ms,
+        parsed: out.parsed, ms: out.ms, rotation: out.rotation,
         metrics: LabelParser.metrics(out.parsed, overrides())
       };
     },

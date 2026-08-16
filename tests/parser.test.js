@@ -124,6 +124,76 @@ group('the linear panel (a gallon of milk)', function () {
   check('from the servings count', m.containerBasis, 'servings');
 });
 
+/* ---------- panels off real shelves ----------
+   Photographed in a shop, transcribed as printed. Snack packaging is where the
+   awkward wordings live: servings measured in cakes and donuts, an "About"
+   before the count, fibre written as "<1g", and four fat sub-lines under the
+   total instead of two. */
+
+group('Little Debbie Swiss Rolls', function () {
+  var p = LabelParser.parse(
+    'Nutrition Facts 6 servings per container Serving size 2 cakes (95g) ' +
+    'Amount per serving Calories 400 % Daily Value* Total Fat 17g 22% ' +
+    'Saturated Fat 9g 45% Trans Fat 0g Polyunsaturated Fat 3g Monounsaturated Fat 4.5g ' +
+    'Cholesterol 15mg 5% Sodium 200mg 9% Total Carbohydrate 60g 22% ' +
+    'Dietary Fiber 1g 4% Total Sugars 42g Includes 42g Added Sugars 84% Protein 2g ' +
+    'Vit. D 0mcg 0% Calcium 20mg 0% Iron 1.6mg 8% Potas. 80mg 0%');
+
+  check('calories', p.calories, 400);
+  // "2 cakes (95g)" — the count of cakes is not the weight.
+  check('serving weight, not the cake count', p.servingGrams, 95);
+  check('servings', p.servingsPerContainer, 6);
+  // Four sub-lines under the total here, two of them unsaturated fats.
+  check('total fat, not any of its four sub-lines', p.fat, 17);
+  check('carbohydrate', p.carbs, 60);
+  check('protein', p.protein, 2);
+  check('the macros confirm it (401 against 400)', p.caloriesConfirmed, true);
+  check('calories per gram', p.caloriesPerGram, 400 / 95, 0.001);
+});
+
+group('McKee cookie', function () {
+  var p = LabelParser.parse(
+    'Nutrition Facts 12 servings per container Serving size 1 cookie (38g) ' +
+    'Amount per serving Calories 170 % Daily Value* Total Fat 7g 9% ' +
+    'Saturated Fat 3g 15% Trans Fat 0g Polyunsaturated Fat 1.5g Monounsaturated Fat 2g ' +
+    'Cholesterol 0mg 0% Sodium 150mg 7% Total Carbohydrate 26g 9% ' +
+    'Dietary Fiber <1g 4% Total Sugars 13g Includes 13g Added Sugars 26% Protein 1g');
+
+  check('calories', p.calories, 170);
+  check('serving weight', p.servingGrams, 38);
+  check('servings', p.servingsPerContainer, 12);
+  check('fat', p.fat, 7);
+  check('carbohydrate', p.carbs, 26);
+  check('protein', p.protein, 1);
+  // "<1g" is how a panel writes a rounded-down amount. Without allowing for
+  // the "<" the line does not parse at all.
+  check('fibre written as "<1g"', p.fiber, 1);
+  check('confirmed', p.caloriesConfirmed, true);
+});
+
+group('Hostess donuts', function () {
+  var p = LabelParser.parse(
+    'Nutrition Facts About 5 servings per container Serving size 3 donuts (53g) ' +
+    'Amount per serving Calories 250 % Daily Value* Total Fat 13g 16% ' +
+    'Saturated Fat 6g 32% Trans Fat 0g Cholesterol 10mg 3% Sodium 200mg 9% ' +
+    'Total Carbohydrate 32g 11% Dietary Fiber 0g 0% Total Sugars 16g ' +
+    'Includes 15g Added Sugars 31% Protein 2g');
+
+  check('calories', p.calories, 250);
+  check('serving weight, not the donut count', p.servingGrams, 53);
+  // "About 5 servings per container" — the hedge in front of the number.
+  check('an "About" before the count', p.servingsPerContainer, 5);
+  check('fat', p.fat, 13);
+  check('carbohydrate', p.carbs, 32);
+  check('protein', p.protein, 2);
+  check('confirmed', p.caloriesConfirmed, true);
+
+  var m = LabelParser.metrics(p, { price: 4.48 });
+  check('calories per gram', m.caloriesPerGram, 250 / 53, 0.001);
+  check('the bag holds', m.totalCalories, 1250);
+  check('calories per dollar', m.caloriesPerDollar, 1250 / 4.48, 0.01);
+});
+
 group('punctuation after a number', function () {
   // The reason the guard cannot simply exclude "." and ",": one of them ends a
   // number and the other is inside it, and only what follows tells them apart.
@@ -335,6 +405,54 @@ group('the macro cross-check', function () {
     'Serving size (240ml) Calories 5 Total Fat 0g Total Carbohydrate 1g Protein 0g');
   check('a tiny serving is not second-guessed', u.calories, 5);
   check('and is not flagged', u.caloriesDisagree, false);
+});
+
+group('a stray digit on a macro line', function () {
+  // The gram symbol reads as a "9" and sometimes arrives as both: "Total Carb.
+  // 12g" comes back "129g", which is a perfectly ordinary-looking number. The
+  // calorie figure is what catches it — and before this, a good reading raised
+  // "the calories and the macros disagree" against a calorie line it had read
+  // perfectly. Measured on an upside-down frame of a milk panel.
+  var p = LabelParser.parse(
+    'Serv. size: 1 cup (240mL), Calories 150, Total Fat 8g, Total Carb. 129g, Protein 8g');
+  check('the stray digit is taken back off', p.carbs, 12);
+  check('and which line it was is reported', p.macroCorrected, 'carbs');
+  check('so no false alarm is raised', p.caloriesDisagree, false);
+  check('the panel calories stand', p.calories, 150);
+  check('and are not "corrected"', p.caloriesCorrected, false);
+
+  // The same artefact on the fat line.
+  var f = LabelParser.parse(
+    'Serving size (55g) Calories 230 Total Fat 89g Total Carbohydrate 37g Protein 3g');
+  check('fat repaired', f.fat, 8);
+  check('reported', f.macroCorrected, 'fat');
+
+  // A panel that reads cleanly is left alone.
+  var clean = LabelParser.parse(
+    'Serving size (55g) Calories 230 Total Fat 8g Total Carbohydrate 37g Protein 3g');
+  check('nothing is repaired when nothing is wrong', clean.macroCorrected, null);
+  check('and it still confirms', clean.caloriesConfirmed, true);
+
+  // A decimal reading kept its point, so it is not this artefact and must not
+  // be trimmed.
+  var dec = LabelParser.parse(
+    'Serving size (95g) Calories 400 Total Fat 17g Total Carbohydrate 60g ' +
+    'Monounsaturated Fat 4.5g Protein 2g');
+  check('a real panel is untouched', dec.macroCorrected, null);
+  check('and confirms', dec.caloriesConfirmed, true);
+
+  // When two different trims would each reconcile, neither is applied —
+  // an ambiguous reading stays ambiguous rather than being resolved by
+  // whichever was tried first.
+  var noCalories = LabelParser.parse(
+    'Serving size (55g) Total Fat 89g Total Carbohydrate 379g Protein 3g');
+  check('no calorie anchor, no repair', noCalories.macroCorrected, null);
+
+  // A genuine disagreement that no single trim can fix is still reported.
+  var real = LabelParser.parse(
+    'Serving size (55g) Calories 500 Total Fat 8g Total Carbohydrate 37g Protein 3g');
+  check('an irreconcilable panel still says so', real.caloriesDisagree, true);
+  check('with nothing trimmed', real.macroCorrected, null);
 });
 
 group('the density guard', function () {

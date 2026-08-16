@@ -45,6 +45,16 @@ body.frozen #video { filter: grayscale(0.5) brightness(0.65); }
   opacity: 0.35;
 }
 
+/* A panel printed on the side of a package lies across the frame, not down it.
+   When the reader settles on a side-on turn the box follows, so what you are
+   asked to line up matches what is actually being read. */
+#reticle.sideways {
+  left: 3%;
+  right: 3%;
+  top: 14%;
+  height: 26%;
+}
+
 .corner {
   position: absolute;
   width: 26px;

@@ -129,10 +129,13 @@ Two panel layouts are tested, because they are not variations on a theme:
 
 | Frame | Table | Linear |
 |---|---|---|
-| Clean render | ~1.9s correct | ~0.9s correct |
-| 4° angle, 1.1px blur, mild glare | ~1.5s correct | ~0.8s correct |
-| Half resolution | ~1.9s correct | ~0.8s correct |
-| 6° angle, heavy glare, low contrast | ~1.4s correct¹ | ~0.8s correct² |
+| Clean render | correct | correct |
+| 4° angle, 1.1px blur, mild glare | correct | correct |
+| Half resolution | correct | correct |
+| 6° angle, heavy glare, low contrast | correct¹ | correct² |
+| **Side-on package (90°)** | correct | correct |
+| **Side-on the other way (270°)** | correct | correct |
+| **Upside down (180°)** | correct | correct |
 
 ¹ minus the servings count · ² minus fat and carbohydrate
 
@@ -144,6 +147,24 @@ per gram were right on every frame of both layouts.
 
 Two agreeing reads are required before a verdict is trusted, so call it **2–4
 seconds** to a confirmed answer on phone-class hardware.
+
+### Which way up
+
+A Nutrition Facts panel is usually printed on the *side* of a package, so a
+phone held normally sees it lying on its side — and sideways text gives the
+reader **nothing at all**. Not a poor reading: calories, serving size and every
+macro come back empty at 90°, 180° and 270°. It is the single largest reason a
+label fails to scan, and it looks exactly like the app being broken.
+
+So the scanner turns the frame. It sticks to whichever way up last worked, and
+only goes looking again after several failed reads — so a shelf of side-printed
+packages costs one probe rather than one per frame, and a panel that has merely
+drifted out of focus does not send it hunting. The box on screen turns with it,
+and the status line says `sideways` so it is clear what is being read.
+
+**📷 Photo** reads all four ways up and keeps the best, stopping early on a
+reading the macros confirm. A photo taken sideways — which is how most people
+photograph the side of a box — reads correctly with nothing to do.
 
 ## What stops it being confidently wrong
 
@@ -194,6 +215,7 @@ was handled:
 | Glare invents accents | `Serving size` → `Serving sizé` | A rule above the line lands on the letter. |
 | The macro units go too | `Total Fat 8g` → `Total Fat 89` | Same "g", under worse contrast. |
 | "Total" is eaten | `Total Fat 8g` → `Fat 8g` | Leaves the sub-line (`Sat. Fat 5g`) as the only fat line the reader can see. |
+| The "g" arrives twice | `Total Carb. 12g` → `129g` | The unit is read as a digit *and* kept, giving an ordinary-looking wrong number. |
 
 The first two are the dangerous ones: both produce a complete, plausible number
 from a line the engine otherwise read perfectly. `Calories 2 30` read naively is
@@ -379,7 +401,7 @@ rows into the journal with a plain form POST — measured, not theorised.
 ## Tests
 
 ```sh
-npm test                        # 272 checks, no browser, no dependencies
+npm test                        # 312 checks, no browser, no dependencies
 ```
 
 The end-to-end harness needs a browser and is deliberately not part of that:
