@@ -194,6 +194,97 @@ group('Hostess donuts', function () {
   check('calories per dollar', m.caloriesPerDollar, 1250 / 4.48, 0.01);
 });
 
+group('the whole panel, not just the headline', function () {
+  var p = LabelParser.parse(
+    'Nutrition Facts 6 servings per container Serving size 2 cakes (95g) ' +
+    'Amount per serving Calories 400 % Daily Value* Total Fat 17g 22% ' +
+    'Saturated Fat 9g 45% Trans Fat 0g Polyunsaturated Fat 3g Monounsaturated Fat 4.5g ' +
+    'Cholesterol 15mg 5% Sodium 200mg 9% Total Carbohydrate 60g 22% ' +
+    'Dietary Fiber 1g 4% Total Sugars 42g Includes 42g Added Sugars 84% Protein 2g ' +
+    'Vit. D 0mcg 0% Calcium 20mg 0% Iron 1.6mg 8% Potas. 80mg 0%');
+
+  var n = p.nutrients;
+  check('saturated fat', n.saturatedFat, 9);
+  check('trans fat', n.transFat, 0);
+  check('polyunsaturated fat', n.polyunsaturatedFat, 3);
+  check('monounsaturated fat, decimal intact', n.monounsaturatedFat, 4.5);
+  check('cholesterol in mg', n.cholesterol, 15);
+  check('sodium in mg', n.sodium, 200);
+  // "Includes 42g Added Sugars" is the one line whose number comes before the
+  // words it is named for.
+  check('added sugars, named after its figure', n.addedSugars, 42);
+  check('vitamin D in mcg', n.vitaminD, 0);
+  check('calcium in mg', n.calcium, 20);
+  check('iron, abbreviated and decimal', n.iron, 1.6);
+  check('potassium, abbreviated to "Potas."', n.potassium, 80);
+
+  // The macros are unaffected by any of this — they are still what the calorie
+  // figure is checked against.
+  check('total fat is still the total', n.fat, 17);
+  check('and the check still passes', p.caloriesConfirmed, true);
+
+  var m = LabelParser.metrics(p, { price: 2.98 });
+  check('every line was read', m.panel.read, 17);
+  check('out of the full panel', m.panel.total, 17);
+
+  function row(key) {
+    return m.panel.rows.filter(function (r) { return r.key === key; })[0];
+  }
+
+  // Per serving is the label. Per 100 is what makes two foods comparable,
+  // because a serving is a marketing decision and 100g is not. Per pack is
+  // what is actually being bought.
+  var sodium = row('sodium');
+  check('sodium per serving', sodium.perServing, 200);
+  check('sodium per 100g', sodium.per100, 200 * (100 / 95), 0.01);
+  check('sodium per package', sodium.perPackage, 1200);
+  check('and it keeps its unit', sodium.unit, 'mg');
+
+  var protein = row('protein');
+  check('protein per package', protein.perPackage, 12);
+  check('protein per 100g', protein.per100, 2 * (100 / 95), 0.01);
+
+  // Indentation is information: it says which lines are part of another.
+  check('saturated fat is indented under the total', row('saturatedFat').indent, 1);
+  check('added sugars sits under total sugars', row('addedSugars').indent, 2);
+  check('total fat is not indented', row('fat').indent, 0);
+
+  // The panel is listed in the order a label prints it.
+  check('calories lead', m.panel.rows[0].key, 'calories');
+  check('the heading names what per-100 is per', m.panel.per100Unit, '100g');
+});
+
+group('the panel when the package size is unknown', function () {
+  // No servings count and no net weight: the per-serving and per-100 columns
+  // still work, and the per-pack column is absent rather than invented.
+  var p = LabelParser.parse(
+    'Serving size (95g) Calories 400 Total Fat 17g Total Carbohydrate 60g Protein 2g Sodium 200mg');
+  var m = LabelParser.metrics(p, {});
+  var sodium = m.panel.rows.filter(function (r) { return r.key === 'sodium'; })[0];
+  check('per serving survives', sodium.perServing, 200);
+  check('per 100g survives', sodium.per100, 200 * (100 / 95), 0.01);
+  check('per pack does not', sodium.perPackage, null);
+  check('and the pack size is named as unknown', m.panel.packServings, null);
+
+  // A net weight is the other route to a package total, for the panel as well
+  // as for the calories.
+  var q = LabelParser.metrics(p, { netWeightGrams: 475 });
+  check('a package mass sizes the panel too', q.panel.packServings, 5);
+  var s2 = q.panel.rows.filter(function (r) { return r.key === 'sodium'; })[0];
+  check('sodium per package from the mass', s2.perPackage, 1000);
+
+  // A drink's computed column is per 100mL, and saying "100g" over it would be
+  // the display inventing a density nobody supplied.
+  var drink = LabelParser.metrics(
+    LabelParser.parse('Serv. size: 1 cup (240mL), Calories 150, Total Fat 8g, Sodium 120mg'), {});
+  check('a drink is per 100mL', drink.panel.per100Unit, '100mL');
+
+  // Nothing read at all is an empty panel, not a crash.
+  var empty = LabelParser.metrics(LabelParser.parse('no numbers here'), {});
+  check('an empty panel has no rows', empty.panel.rows.length, 0);
+  check('and says so', empty.panel.read, 0);
+});
+
 group('punctuation after a number', function () {
   // The reason the guard cannot simply exclude "." and ",": one of them ends a
   // number and the other is inside it, and only what follows tells them apart.

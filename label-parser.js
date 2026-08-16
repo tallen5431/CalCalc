@@ -124,13 +124,33 @@
     return toNumber(token);
   }
 
+  /* Every match of a pattern is tried, not just its first.
+   *
+   * Half the characters in the lookalike class are letters, so a pattern can
+   * match text that contains no number at all — "Calories Iron 1.6mg" offers
+   * the "I" of "Iron" as a candidate figure. Taking only the first match meant
+   * one such near-miss discarded the pattern entirely and the real number three
+   * words later was never reached.
+   */
+  function eachMatch(text, pattern, fn) {
+    var flags = pattern.flags.indexOf('g') === -1 ? pattern.flags + 'g' : pattern.flags;
+    var re = new RegExp(pattern.source, flags);
+    var m;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index === re.lastIndex) re.lastIndex++;   // a zero-width match would spin
+      var stop = fn(m);
+      if (stop !== undefined) return stop;
+    }
+    return undefined;
+  }
+
   function firstMatch(text, patterns) {
     for (var i = 0; i < patterns.length; i++) {
-      var m = text.match(patterns[i]);
-      if (m) {
+      var hit = eachMatch(text, patterns[i], function (m) {
         var v = realNumber(m[1]);
-        if (v !== null) return { value: v, match: m };
-      }
+        return v === null ? undefined : { value: v, match: m };
+      });
+      if (hit) return hit;
     }
     return null;
   }
@@ -191,6 +211,18 @@
   // Both produced a number close enough to the truth to look right on screen
   // and wrong enough to be wrong.
   var CAL_RUN = DC + '{1,4}(?:\\s{1,2}\\d{1,3}(?!\\s*%)){0,2}';
+  // The same run, but it must start with a genuine digit. Used where the
+  // pattern is loose enough that a lookalike letter would otherwise pass.
+  var CAL_RUN_STRICT = '\\d' + DC + '{0,3}(?:\\s{1,2}\\d{1,3}(?!\\s*%)){0,2}';
+
+  // The words that begin a line of their own on a panel. A search for the
+  // calorie figure may not run past one of these into the number that belongs
+  // to it.
+  var NUTRIENT_WORD = 'fat|carb|prote[li1|]n|sod[li1|]um|cholest|sugar|f[li1|]b' +
+                      '|v[li1|]tam[li1|]n|calc[li1|]um|[li1|]ron|potas|serv[li1|]ng';
+  // A bounded run of non-digits, no position of which may start a nutrient
+  // word. Lazy, so the nearest figure wins.
+  var CAL_GAP = '(?:(?!' + NUTRIENT_WORD + ')[^\\d]){0,25}?';
   var CAL_PATTERNS = [
     new RegExp(CAL_WORD + '\\s*(?:per\\s+serving)?\\s*[:\\-]?\\s*(' + CAL_RUN + ')' + TOKEN_END, 'i'),
     // The number may arrive before the word — reading order is not guaranteed,
@@ -203,7 +235,31 @@
     // "2,000" matches — reporting a Swiss roll as **0 calories**. Written as a
     // consumed prefix rather than a lookbehind, which iOS Safari only learned
     // in 16.4 and which would throw on parse for anyone older.
-    new RegExp('(?:^|[^\\dOoQlIiSsBbZz.,])(' + DC + '{1,4})' + TOKEN_END + '\\s*' + CAL_WORD + '\\b', 'i')
+    new RegExp('(?:^|[^\\dOoQlIiSsBbZz.,])(' + DC + '{1,4})' + TOKEN_END + '\\s*' + CAL_WORD + '\\b', 'i'),
+
+    /* The number may not land next to its word at all.
+     *
+     * The calorie figure is set larger than anything else on the panel, and the
+     * "% Daily Value*" heading sits in the column beside it — so the engine
+     * regularly reads them in the order "Calories % Daily Value* 400", with the
+     * heading in between. Both earlier patterns need the number adjacent to the
+     * word, so the figure was simply lost, and a box of Swiss rolls fell back
+     * to totting up its own macros when the 400 was right there in the frame.
+     *
+     * Two things keep it honest. The gap may not contain a digit, so it cannot
+     * step over one number to reach another; and it may not cross the start of
+     * a nutrient line, so it cannot run from "Calories" into "Total Fat 17g"
+     * and report a box of cakes as 17 calories. Without that second guard it
+     * did exactly that. The trailing guard rejects a percentage, because
+     * everything else in that column is one.
+     *
+     * The captured figure must *begin* with a real digit, which the two
+     * patterns above do not require. Half the lookalike class is letters, so
+     * without that the lazy gap stops at the "l" of "Value" and offers it as
+     * the calorie figure — a match that consumes the position and takes the
+     * real 400 four words later down with it.
+     */
+    new RegExp(CAL_WORD + CAL_GAP + '(' + CAL_RUN_STRICT + ')' + TOKEN_END + '(?!\\s*%)', 'i')
   ];
 
   // The footnote is boilerplate, it is on every panel, and it contains the one
@@ -222,23 +278,24 @@
       .replace(CAL_FOOTNOTE, ' ');
 
     for (var i = 0; i < CAL_PATTERNS.length; i++) {
-      var m = cleaned.match(CAL_PATTERNS[i]);
-      if (!m) continue;
-      var raw = String(m[1]);
-      var joined = raw.replace(/\s+/g, '');
-      // Too many digits means the runs were joined across a gap that separated
-      // two different numbers. Fall back to the first run, which is the part
-      // that was certainly inside the calorie figure.
-      if (joined.replace(/[.,]/g, '').length > MAX_CAL_DIGITS) {
-        joined = raw.split(/\s+/)[0];
-      }
-      var v = realNumber(joined);
-      if (v === null) continue;
-      // A single serving of anything sold in a container tops out well below
-      // this; beyond it the reading has picked up a percentage or run two
-      // numbers together.
-      if (v < 0 || v > 5000) continue;
-      return v;
+      var found = eachMatch(cleaned, CAL_PATTERNS[i], function (m) {
+        var raw = String(m[1]);
+        var joined = raw.replace(/\s+/g, '');
+        // Too many digits means the runs were joined across a gap that
+        // separated two different numbers. Fall back to the first run, which is
+        // the part that was certainly inside the calorie figure.
+        if (joined.replace(/[.,]/g, '').length > MAX_CAL_DIGITS) {
+          joined = raw.split(/\s+/)[0];
+        }
+        var v = realNumber(joined);
+        if (v === null) return undefined;
+        // A single serving of anything sold in a container tops out well below
+        // this; beyond it the reading has picked up a percentage or run two
+        // numbers together.
+        if (v < 0 || v > 5000) return undefined;
+        return v;
+      });
+      if (found !== undefined) return found;
     }
     return null;
   }
@@ -462,6 +519,91 @@
     };
   }
 
+  /* ---------- the rest of the panel ----------
+   *
+   * The three macros above are load-bearing: they are what the calorie figure
+   * is checked against. Everything below is read because it is printed and
+   * because a record of a food that throws away three quarters of its label is
+   * a worse record than it needs to be — but nothing here is used to decide
+   * anything, so a line that will not read costs a blank cell and nothing else.
+   *
+   * Units are whatever the panel states them in. Milligrams are not converted
+   * to grams and micrograms are not converted to milligrams: the figure is
+   * shown in the unit it was printed in, so it can be checked against the box.
+   */
+  var MG = '(?:m[g9q]|milligrams?)';
+  var MCG = '(?:mcg|µg|ug|micrograms?)';
+
+  // Each entry: the label as OCR may render it, the unit, and a ceiling above
+  // which the reading is a misread rather than a food.
+  var NUTRIENTS = [
+    { key: 'saturatedFat', label: 'sat(?:urated)?\\.?\\s*fat', unit: 'g', max: 500 },
+    { key: 'transFat', label: 'trans\\.?\\s*fat', unit: 'g', max: 500 },
+    { key: 'polyunsaturatedFat', label: 'poly(?:unsaturated)?\\.?\\s*fat', unit: 'g', max: 500 },
+    { key: 'monounsaturatedFat', label: 'mono(?:unsaturated)?\\.?\\s*fat', unit: 'g', max: 500 },
+    { key: 'cholesterol', label: 'cholest(?:erol)?\\.?', unit: 'mg', max: 100000 },
+    { key: 'sodium', label: 'sod[li1|]um', unit: 'mg', max: 100000 },
+    // "Includes 42g Added Sugars" puts the number before the words, which is
+    // the only line on the panel that does.
+    { key: 'addedSugars', label: '[li1|]ncludes', unit: 'g', max: 500, after: 'added\\s*sugars' },
+    { key: 'vitaminD', label: 'v[li1|]t(?:am[li1|]n)?\\.?\\s*d', unit: 'mcg', max: 10000 },
+    { key: 'calcium', label: 'calc[li1|]um', unit: 'mg', max: 100000 },
+    { key: 'iron', label: '[li1|]ron', unit: 'mg', max: 100000 },
+    { key: 'potassium', label: 'potas(?:s[li1|]um)?\\.?', unit: 'mg', max: 100000 }
+  ];
+
+  var UNIT_RE = { g: GU, mg: MG, mcg: MCG };
+
+  function findNutrients(text) {
+    var out = {};
+    NUTRIENTS.forEach(function (n) {
+      var unitRe = UNIT_RE[n.unit];
+      // `after` covers "Includes 42g Added Sugars", where the words the line is
+      // named for come after its figure.
+      var body = n.after
+        ? n.label + '\\s*' + LT + '(' + NUM + ')\\s*' + unitRe + '\\s*' + n.after
+        : n.label + '\\s*[:\\-]?\\s*' + LT + '(' + NUM + ')\\s*' + unitRe + '\\b';
+      var hit = firstMatch(text, [new RegExp(body, 'i')]);
+      out[n.key] = (hit && hit.value >= 0 && hit.value <= n.max) ? hit.value : null;
+    });
+    return out;
+  }
+
+  // What each field is measured in, so a display never has to guess and a
+  // record never loses it.
+  var NUTRIENT_UNITS = {
+    calories: 'cal',
+    fat: 'g', saturatedFat: 'g', transFat: 'g',
+    polyunsaturatedFat: 'g', monounsaturatedFat: 'g',
+    cholesterol: 'mg', sodium: 'mg',
+    carbs: 'g', fiber: 'g', sugars: 'g', addedSugars: 'g',
+    protein: 'g',
+    vitaminD: 'mcg', calcium: 'mg', iron: 'mg', potassium: 'mg'
+  };
+
+  // The order a panel prints them in, which is the order to show them in.
+  var NUTRIENT_ORDER = [
+    'calories', 'fat', 'saturatedFat', 'transFat', 'polyunsaturatedFat',
+    'monounsaturatedFat', 'cholesterol', 'sodium', 'carbs', 'fiber',
+    'sugars', 'addedSugars', 'protein', 'vitaminD', 'calcium', 'iron', 'potassium'
+  ];
+
+  var NUTRIENT_LABELS = {
+    calories: 'Calories', fat: 'Total fat', saturatedFat: 'Saturated fat',
+    transFat: 'Trans fat', polyunsaturatedFat: 'Polyunsaturated fat',
+    monounsaturatedFat: 'Monounsaturated fat', cholesterol: 'Cholesterol',
+    sodium: 'Sodium', carbs: 'Total carbohydrate', fiber: 'Dietary fiber',
+    sugars: 'Total sugars', addedSugars: 'Added sugars', protein: 'Protein',
+    vitaminD: 'Vitamin D', calcium: 'Calcium', iron: 'Iron', potassium: 'Potassium'
+  };
+
+  // Which lines are printed indented under another on the panel. Worth keeping
+  // because it is the difference between a total and a part of one.
+  var NUTRIENT_INDENT = {
+    saturatedFat: 1, transFat: 1, polyunsaturatedFat: 1, monounsaturatedFat: 1,
+    fiber: 1, sugars: 1, addedSugars: 2
+  };
+
   /* ---------- the cross-check ----------
    *
    * The panel states its calories, and it also states the macros those
@@ -567,12 +709,31 @@
     return { calories: calories, corrected: false, disagrees: true, source: 'label' };
   }
 
+  // The whole panel in one object, keyed the way the rest of the app refers to
+  // these figures. The macros keep their existing names because they are what
+  // the calorie check runs on and they were named before the rest existed.
+  function nutrientsOf(macros, calories, extras) {
+    var out = {
+      calories: calories,
+      fat: macros.fat,
+      carbs: macros.carbs,
+      protein: macros.protein,
+      fiber: macros.fiber,
+      sugars: macros.sugars
+    };
+    for (var k in extras) {
+      if (extras.hasOwnProperty(k)) out[k] = extras[k];
+    }
+    return out;
+  }
+
   /* ---------- public ---------- */
 
   function parse(rawText) {
     var text = normalize(rawText);
 
     var macros = findMacros(text);
+    var extras = findNutrients(text);
     var predicted = atwater(macros);
     var read = findCalories(text);
 
@@ -656,6 +817,9 @@
       fat: macros.fat,
       carbs: macros.carbs,
       protein: macros.protein,
+      // Everything else the panel prints, per serving, in the unit it was
+      // printed in. Read because it is there; nothing here decides anything.
+      nutrients: nutrientsOf(macros, calories, extras),
       // Which macro line had a digit taken back off it, or null. Reported for
       // the same reason every other correction is: it is a guess about a
       // character, and the person holding the package can see the real one.
@@ -776,6 +940,18 @@
       costPerServing: costPerServing,
       costPer100g: costPer100g,
 
+      /* The panel, organised three ways.
+       *
+       * Per serving is what the label states. Per 100 units is the one that
+       * makes two foods comparable, because a serving is a marketing decision
+       * and 100g is not. Per package is what you are actually buying.
+       *
+       * Only the first is read off the label; the other two are worked out, and
+       * they exist only where there is something to work them out from — no
+       * serving weight means no per-100, no container size means no per-pack.
+       */
+      panel: panelOf(parsed, grams, servings, totalGrams, unit),
+
       // Where a food sits on the scale the panel itself implies: 0 kcal/g is
       // water, 4 is sugar or flour, 9 is fat. Bands, not a verdict — this app
       // has no business telling anyone what to eat, only what they are holding.
@@ -826,6 +1002,49 @@
     return { amount: n * u.factor, measure: u.measure };
   }
 
+  /* Every line the panel printed, with the two scalings that make it useful.
+   *
+   * `rows` is ordered the way a panel is and carries the label, the unit and
+   * the indent, so a display can render the whole thing without knowing
+   * anything about nutrition — and a record can store it without a schema of
+   * its own.
+   */
+  function panelOf(parsed, grams, servings, totalGrams, unit) {
+    var read = (parsed && parsed.nutrients) || {};
+    var per100Factor = grams ? 100 / grams : null;
+    // The package total comes from the servings count when there is one, and
+    // otherwise from a net weight divided by the serving weight — the same two
+    // routes the calorie total takes, for the same reasons.
+    var packServings = servings || ((totalGrams && grams) ? totalGrams / grams : null);
+
+    var rows = [];
+    NUTRIENT_ORDER.forEach(function (key) {
+      var v = read[key];
+      if (v === null || v === undefined || !isFinite(v)) return;
+      rows.push({
+        key: key,
+        label: NUTRIENT_LABELS[key] || key,
+        unit: NUTRIENT_UNITS[key] || '',
+        indent: NUTRIENT_INDENT[key] || 0,
+        perServing: v,
+        per100: per100Factor === null ? null : v * per100Factor,
+        perPackage: packServings === null ? null : v * packServings
+      });
+    });
+
+    return {
+      rows: rows,
+      // What the two computed columns are per, so a heading can say so — "per
+      // 100mL" over a drink and "per 100g" over a biscuit.
+      per100Unit: unit === 'ml' ? '100mL' : '100g',
+      packServings: packServings,
+      // How much of the panel was actually read. A count is the honest way to
+      // say "this is most of it" or "this is two lines out of seventeen".
+      read: rows.length,
+      total: NUTRIENT_ORDER.length
+    };
+  }
+
   // An override only counts when it is a real, usable number. An empty input
   // box is not a zero, and a zero serving weight is a division this app must
   // never do.
@@ -844,7 +1063,7 @@
    * worker's cache, reproducing a bug against code that no longer existed —
    * and there was no way to tell that from the outside, because a stale app
    * looks exactly like an unfixed one. Now there is. */
-  var VERSION = '2026-08-16.5';
+  var VERSION = '2026-08-16.6';
 
   return {
     version: VERSION,

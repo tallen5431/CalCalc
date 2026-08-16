@@ -135,6 +135,51 @@ group('collapsing the file', function () {
   check('a mark with nothing to say is refused', Journal.sanitizeMark({ id: 'a' }, NOW).error, 'nothing to note');
 });
 
+group('the rest of the panel', function () {
+  var full = save(Object.assign({}, GOOD, {
+    nutrients: {
+      fat: 17, saturatedFat: 9, transFat: 0, polyunsaturatedFat: 3,
+      monounsaturatedFat: 4.5, cholesterol: 15, sodium: 200, carbs: 60,
+      fiber: 1, sugars: 42, addedSugars: 42, protein: 2,
+      vitaminD: 0, calcium: 20, iron: 1.6, potassium: 80
+    }
+  }));
+  check('the panel is kept', full.item.nutrients.sodium, 200);
+  check('decimals survive', full.item.nutrients.monounsaturatedFat, 4.5);
+  check('so do zeroes', full.item.nutrients.transFat, 0);
+
+  // Only the named keys. A record whose shape depends on what a client felt
+  // like sending is not a record.
+  var junk = save(Object.assign({}, GOOD, {
+    nutrients: { sodium: 200, caffeine: 90, __proto__: { x: 1 }, notes: 'hello' }
+  }));
+  check('a known key is kept', junk.item.nutrients.sodium, 200);
+  check('an unknown one is dropped', junk.item.nutrients.caffeine, undefined);
+  check('and so is a string', junk.item.nutrients.notes, undefined);
+
+  // Same clamping as every other figure. One good value rides along so the
+  // field survives to be inspected — with all of them dropped there is no
+  // field at all, which is the next check.
+  var bad = save(Object.assign({}, GOOD, {
+    nutrients: { fat: 17, sodium: -5, calcium: Infinity, iron: 'lots', protein: 1e9 }
+  }));
+  check('the good one is kept', bad.item.nutrients.fat, 17);
+  check('a negative is dropped', bad.item.nutrients.sodium, undefined);
+  check('infinity is dropped', bad.item.nutrients.calcium, undefined);
+  check('a string is dropped', bad.item.nutrients.iron, undefined);
+  check('an absurd figure is dropped', bad.item.nutrients.protein, undefined);
+
+  // Every value rejected means no field, rather than an empty object on the row.
+  var allBad = save(Object.assign({}, GOOD, { nutrients: { sodium: -5, iron: 'lots' } }));
+  check('nothing usable, no field', allBad.item.nutrients, undefined);
+
+  // Nothing sent means no field at all, rather than an empty object cluttering
+  // every row in the file.
+  check('no panel, no field', save(GOOD).item.nutrients, undefined);
+  check('an empty panel likewise', save(Object.assign({}, GOOD, { nutrients: {} })).item.nutrients, undefined);
+  check('and junk in its place', save(Object.assign({}, GOOD, { nutrients: 'x' })).item.nutrients, undefined);
+});
+
 group('the export', function () {
   var csv = Journal.toCsv([save(GOOD).item]);
   var lines = csv.trim().split('\n');
@@ -153,6 +198,22 @@ group('the export', function () {
   check('quotes are escaped', quoted.indexOf('"the ""good"" oats"') !== -1, true);
 
   check('an empty export is still a header', Journal.toCsv([]).trim().split('\n').length, 1);
+
+  // Each panel line gets its own column, so a spreadsheet can sort on protein
+  // per dollar without anyone unpacking a nested field first.
+  var withPanel = Journal.toCsv([save(Object.assign({}, GOOD, {
+    nutrients: { sodium: 200, protein: 2, iron: 1.6 }
+  })).item]);
+  var head = withPanel.split('\n')[0].split(',');
+  var row = withPanel.split('\n')[1].split(',');
+  check('sodium has a column', head.indexOf('sodium') !== -1, true);
+  check('and potassium too', head.indexOf('potassium') !== -1, true);
+  check('the value lands under it', row[head.indexOf('sodium')], '200');
+  check('a decimal survives the export', row[head.indexOf('iron')], '1.6');
+  // A line the panel never gave is an empty cell, not a zero — those are
+  // different facts and a spreadsheet will average them differently.
+  check('an unread line is blank, not zero', row[head.indexOf('calcium')], '');
+  check('the row is as wide as the header', row.length, head.length);
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

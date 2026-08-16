@@ -36,7 +36,8 @@
   ['video', 'frame', 'reticle', 'verdict', 'verdictLabel', 'perGram', 'perGramUnit',
    'perDollar', 'perDollarRow', 'vCal', 'vServing', 'vServings', 'vTotal',
    'warn', 'statusline', 'btnFreeze', 'photo', 'btnPrice',
-   'btnSave', 'saveNote', 'nameSheet', 'setName', 'btnSaveConfirm', 'saveSummary'
+   'btnSave', 'saveNote', 'nameSheet', 'setName', 'btnSaveConfirm', 'saveSummary',
+   'btnPanel', 'panelSheet', 'panelBody', 'panelNote', 'per100Head'
   ].forEach(function (id) { el[id] = document.getElementById(id); });
 
   var ctx = el.frame.getContext('2d', { willReadFrequently: true });
@@ -475,6 +476,12 @@
     // than read again on save.
     el.btnSave.hidden = !m.usable;
 
+    // Offered whenever more than the headline was read. The count goes on the
+    // button so it says how much is behind it before you tap.
+    var lines = m.panel ? m.panel.read : 0;
+    el.btnPanel.hidden = lines < 2;
+    el.btnPanel.textContent = '▤ Full panel · ' + lines + ' of ' + m.panel.total + ' lines';
+
     el.warn.textContent = '';
     var notes = noteworthy(m);
     if (notes.length) {
@@ -651,6 +658,51 @@
     document.getElementById('setNetWeightUnit').value = settings.netWeightUnit;
     render(0);
   });
+
+  /* ---------- the full panel ---------- */
+
+  el.btnPanel.addEventListener('click', function () {
+    renderPanel(LabelParser.metrics(lastParsed, overrides()));
+    el.panelSheet.hidden = false;
+  });
+
+  // Built with createElement and textContent, like the records page and for the
+  // same reason: none of this is trusted enough to hand to innerHTML.
+  function renderPanel(m) {
+    el.panelBody.textContent = '';
+    el.per100Head.textContent = m.panel.per100Unit;
+
+    m.panel.rows.forEach(function (r) {
+      var tr = document.createElement('tr');
+      if (r.indent) tr.className = 'indent-' + r.indent;
+
+      var name = document.createElement('td');
+      name.className = 'nutrient';
+      name.textContent = r.label;
+      tr.appendChild(name);
+
+      [r.perServing, r.per100, r.perPackage].forEach(function (v) {
+        var td = document.createElement('td');
+        td.textContent = amount(v, r.unit);
+        tr.appendChild(td);
+      });
+      el.panelBody.appendChild(tr);
+    });
+
+    var bits = [];
+    if (m.servingGrams) bits.push('Serving ' + round(m.servingGrams, 0) + m.perGramUnit);
+    if (m.panel.packServings) bits.push(tidy(m.panel.packServings) + ' servings a pack');
+    if (!m.panel.packServings) bits.push('Pack column needs a servings count or a package mass.');
+    el.panelNote.textContent = bits.join(' · ');
+  }
+
+  // Small figures keep a decimal, large ones do not — 1.6mg of iron matters and
+  // 210.53mg of sodium is false precision on a number the panel rounded anyway.
+  function amount(v, unit) {
+    if (v === null || v === undefined || !isFinite(v)) return '--';
+    var d = v === 0 ? 0 : (Math.abs(v) < 10 ? 1 : 0);
+    return v.toFixed(d) + unit;
+  }
 
   /* ---------- saving ---------- */
 

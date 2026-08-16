@@ -70,7 +70,34 @@ corrected`, `unit assumed`, `typed`, `pack size from mass`. A saved number with
 no record of how much to trust it cannot be checked a month later, when the
 package it came from is in a bin.
 
-**⤓ CSV** exports the lot for a spreadsheet.
+**⤓ CSV** exports the lot for a spreadsheet, one column per nutrient — so you
+can sort on protein per dollar or sodium per pack without unpacking anything.
+
+### The whole panel, three ways
+
+**▤ Full panel** under the readout shows every line the label printed, not just
+the headline — saturated, trans, poly- and monounsaturated fat, cholesterol,
+sodium, carbohydrate, fibre, total and added sugars, protein, vitamin D,
+calcium, iron and potassium. The button says how much of the panel was read
+before you tap it (`15 of 17 lines`).
+
+Each is given three ways:
+
+| Column | |
+|---|---|
+| **Serving** | what the label states |
+| **Per 100g** | what makes two foods comparable, since a serving size is a marketing decision and 100g is not |
+| **Pack** | what you are actually buying |
+
+Only the first is read off the label; the other two are worked out, and they
+appear only where there is something to work them out from — no serving weight
+means no per-100 column, no container size means no per-pack column. Indentation
+is kept from the panel, because it is the difference between a total and a part
+of one. A drink's middle column says `100mL`.
+
+Everything here is saved with the item. None of it is used to decide anything —
+only the three macros feed the calorie cross-check — so a line that will not
+read costs a blank cell and nothing else.
 
 ### It saves in the shop, not just at home
 
@@ -388,7 +415,7 @@ reading labels with the old parser, reproducing a bug against code that no
 longer existed. A stale app looks exactly like an unfixed one.
 
 So **the reader prints its version**, at the bottom of the 💲 Price sheet:
-`Reader 2026-08-16.5`. If a label misreads, that string says whether the phone
+`Reader 2026-08-16.6`. If a label misreads, that string says whether the phone
 is running what you think it is. It is bumped whenever the reading changes.
 
 If a phone is somehow still stale: open the page, pull to refresh, or clear the
@@ -426,7 +453,7 @@ rows into the journal with a plain form POST — measured, not theorised.
 ## Tests
 
 ```sh
-npm test                        # 322 checks, no browser, no dependencies
+npm test                        # 378 checks, no browser, no dependencies
 ```
 
 The end-to-end harness needs a browser and is deliberately not part of that:

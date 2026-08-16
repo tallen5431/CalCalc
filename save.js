@@ -82,6 +82,10 @@
       dollarsPerThousandCalories: metrics.dollarsPerThousandCalories,
       containerBasis: metrics.containerBasis,
 
+      // Every line the panel printed, per serving, in its own unit. Kept flat
+      // and by key so the record does not depend on the display's ordering.
+      nutrients: nutrientsFrom(metrics),
+
       source: source,
       caloriesConfirmed: !!p.caloriesConfirmed,
       caloriesCorrected: !!p.caloriesCorrected,
@@ -90,6 +94,20 @@
       servingCorrected: !!p.servingCorrected,
       servingUnitInferred: !!p.servingUnitInferred
     };
+  }
+
+  // The per-serving figures only. The per-100 and per-pack columns are worked
+  // out from these and the serving size, both of which are already on the
+  // record — storing them too would be storing the same fact three times, and
+  // three copies of a fact are three chances for them to disagree.
+  function nutrientsFrom(metrics) {
+    var out = {};
+    var rows = (metrics.panel && metrics.panel.rows) || [];
+    rows.forEach(function (r) {
+      if (r.key === 'calories') return;      // already a column of its own
+      out[r.key] = r.perServing;
+    });
+    return out;
   }
 
   // Resolves to { queued: n } — how many are still waiting to reach the server.

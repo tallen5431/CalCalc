@@ -44,6 +44,10 @@
 
     <div id="warn" class="notice" hidden></div>
 
+    <!-- Everything else the panel printed. Behind a tap because the headline is
+         what you are standing in the aisle for, but read and kept regardless. -->
+    <button class="panellink" id="btnPanel" type="button" hidden>▤ Full panel</button>
+
     <!-- Appears once there is something worth keeping. Hidden until then, so
          the panel is not offering to save "--". -->
     <button class="wide save" id="btnSave" type="button" hidden>💾 Save this</button>
@@ -59,6 +63,27 @@
     <a class="linkbtn" href="records.html">▤ Saved</a>
     <a class="linkbtn" href="index.html">⌨ Type</a>
   </nav>
+</div>
+
+<!-- The whole panel, three ways. Per serving is what the label says; per 100 is
+     what makes two foods comparable, since a serving is a marketing decision
+     and 100g is not; per package is what you are buying. -->
+<div class="sheet" id="panelSheet" hidden>
+  <div class="sheet-inner">
+    <header><h2>Full panel</h2><button class="close" data-close="panelSheet" type="button">Done</button></header>
+    <table class="paneltable">
+      <thead>
+        <tr>
+          <th>Nutrient</th>
+          <th>Serving</th>
+          <th id="per100Head">100g</th>
+          <th>Pack</th>
+        </tr>
+      </thead>
+      <tbody id="panelBody"></tbody>
+    </table>
+    <p class="note" id="panelNote"></p>
+  </div>
 </div>
 
 <!-- Naming the thing. Opened by Save, because a record you cannot find again by

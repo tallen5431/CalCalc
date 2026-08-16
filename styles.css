@@ -343,6 +343,54 @@ button.wide { width: 100%; margin-top: 0.6rem; }
   margin: 0.8rem 0 0;
 }
 
+/* ---------- the full panel ---------- */
+
+.panellink {
+  width: 100%;
+  margin-top: 0.6rem;
+  background: transparent;
+  border-style: dashed;
+  color: var(--dim);
+  font-size: 0.8rem;
+  font-weight: 600;
+  min-height: 2.4rem;
+  padding: 0.45rem;
+}
+
+.paneltable {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+}
+.paneltable th {
+  text-align: right;
+  font-size: 0.64rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding: 0.3rem 0.25rem;
+  border-bottom: 1px solid var(--line);
+}
+.paneltable th:first-child { text-align: left; }
+.paneltable td {
+  text-align: right;
+  padding: 0.34rem 0.25rem;
+  border-bottom: 1px solid rgba(34, 48, 65, 0.5);
+}
+.paneltable td.nutrient {
+  text-align: left;
+  font-weight: 600;
+  /* The name column takes what it needs and the figures stay aligned; a
+     nutrient called "Monounsaturated fat" must not push them off the screen. */
+  max-width: 9rem;
+  overflow-wrap: anywhere;
+}
+/* Indentation is information: it is the difference between a total and a part
+   of one, and the panel prints it for exactly that reason. */
+.paneltable tr.indent-1 td.nutrient { padding-left: 0.8rem; font-weight: 400; }
+.paneltable tr.indent-2 td.nutrient { padding-left: 1.6rem; font-weight: 400; }
+
 /* ---------- saving ---------- */
 
 button.save {
