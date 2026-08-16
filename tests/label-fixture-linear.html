@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nutrition Facts fixture — linear</title>
+<!-- The other panel layout: the same information as one running sentence,
+     which is what a gallon jug or a small package prints when there is no room
+     for the table. Replicates a Great Value whole milk gallon.
+
+     Different in every way that matters to the reader: "Serv. size" rather than
+     "Serving size", "Servings: 16" with no "per container" anywhere, a serving
+     measured in millilitres, and numbers followed by commas because the whole
+     panel is a list. -->
+<style>
+  body { margin: 0; background: #fff; }
+  .panel {
+    width: 360px;
+    padding: 8px 10px 10px;
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #000;
+    border: 2px solid #000;
+    box-sizing: border-box;
+  }
+  .title { font-size: 21px; font-weight: 900; letter-spacing: -0.5px; }
+  b { font-weight: 800; }
+  .cal { font-size: 17px; font-weight: 900; }
+</style>
+</head>
+<body>
+<div class="panel" id="panel">
+  <span class="title">Nutrition Facts</span>
+  Servings: 16, <b>Serv. size: 1 cup (240mL),</b>
+  Amount per serving: <span class="cal">Calories 150,</span>
+  <b>Total Fat</b> 8g (10% DV), Sat. Fat 5g (25% DV), Trans Fat 0g,
+  <b>Cholest.</b> 35mg (11% DV), <b>Sodium</b> 120mg (5% DV),
+  <b>Total Carb.</b> 12g (4% DV), Fiber 0g (0% DV),
+  Total Sugars 11g (Incl. 0g Added Sugars, 0% DV),
+  <b>Protein</b> 8g, Vit. D (10% DV), Calcium (20% DV), Iron (0% DV),
+  Potas. (8% DV), Vit. A (10% DV). % DV = % Daily Value
+</div>
+</body>
+</html>

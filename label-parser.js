@@ -154,7 +154,18 @@
   // small, from a line it had read perfectly. A partial number is the one
   // failure mode a digit-level check cannot see, so the pattern is not allowed
   // to produce one.
-  var TOKEN_END = '(?![' + '\\dOoQlIiSsBbZz' + '.,])';
+  //
+  // Two separate conditions, and the second one is why this is not simply a
+  // list of characters. A "." or "," after the number may be a decimal point —
+  // in which case the number is not finished and this must not match — or it
+  // may be ordinary punctuation. It is a decimal point only when a digit
+  // follows it.
+  //
+  // Excluding "." and "," outright, as this first did, meant the linear panels
+  // printed on milk jugs failed at the first line: "Calories 150, Total Fat 8g"
+  // has a comma there as a list separator, so the calorie figure was refused
+  // and the reading fell back to totting up the macros.
+  var TOKEN_END = '(?![' + '\\dOoQlIiSsBbZz' + '])(?![.,]\\d)';
 
   // The calorie figure is set far larger than anything else on the panel —
   // that is the point of the 2016 redesign — and large type is exactly where
@@ -236,15 +247,22 @@
   // holding the package can see the real one.
   var UNIT = '(g|gram|grams|m[li1|]|ml|mL|oz|9|q)';
 
+  // "Serving size", and also "Serv. size" — the abbreviation the linear panels
+  // on milk jugs and small packages use. Requiring the full word meant those
+  // labels fell through to the last-resort pattern below, which will take a
+  // parenthesised weight from anywhere on the package and is not something to
+  // rely on when the real line is right there.
+  var SERV_SIZE = 'serv(?:[li1|]ng)?\\.?\\s*s[li1|]ze';
+
   var SERVING_PARENS = new RegExp(
-    'serv[li1|]ng\\s*s[li1|]ze[^(]{0,40}\\(\\s*(' + NUM + ')\\s*' + UNIT + '\\s*\\)',
+    SERV_SIZE + '[^(]{0,40}\\(\\s*(' + NUM + ')\\s*' + UNIT + '\\s*\\)',
     'i'
   );
   // A panel that gives the weight without parentheses: "Serving Size 30 g".
   // No closing bracket to anchor against, so the unit has to be a real letter
   // here — a bare trailing "9" is far more likely to be part of the number.
   var SERVING_BARE = new RegExp(
-    'serv[li1|]ng\\s*s[li1|]ze\\s*[:\\-]?\\s*(?:about\\s*)?(' + NUM + ')\\s*(g|gram|grams|m[li1|]|ml|mL|oz)\\b',
+    SERV_SIZE + '\\s*[:\\-]?\\s*(?:about\\s*)?(' + NUM + ')\\s*(g|gram|grams|m[li1|]|ml|mL|oz)\\b',
     'i'
   );
   // Last resort: any parenthesised weight anywhere. Only reached when the
@@ -287,7 +305,18 @@
   var SERVINGS_PATTERNS = [
     new RegExp('(' + NUM + ')\\s*serv[li1|]ngs?\\s*per\\s*conta[li1|]ner', 'i'),
     new RegExp('serv[li1|]ngs?\\s*per\\s*conta[li1|]ner\\s*[:\\-]?\\s*(?:about|approx\\.?)?\\s*(' + NUM + ')', 'i'),
-    new RegExp('(?:about|approx\\.?)\\s*(' + NUM + ')\\s*serv[li1|]ngs?\\b', 'i')
+    new RegExp('(?:about|approx\\.?)\\s*(' + NUM + ')\\s*serv[li1|]ngs?\\b', 'i'),
+    // "Servings: 16" — the linear panel's way of saying it, with no "per
+    // container" anywhere on the label. Without this a gallon of milk has no
+    // container size at all, and therefore no calories per dollar.
+    //
+    // Two deliberate narrowings, because this pattern is far looser than the
+    // three above it. The plural "s" is required, so "Serving size 2/3 cup"
+    // cannot match — and real digits are required rather than the lookalike
+    // class, because otherwise "size" itself reads as a number (S, I and Z are
+    // all lookalikes) and poisons the match on any label that puts the serving
+    // size first.
+    new RegExp('serv[li1|]ngs\\s*[:\\-]?\\s*(\\d{1,3})\\b', 'i')
   ];
 
   function findServings(text) {
@@ -357,7 +386,12 @@
   var GU = '(?:g|gram|grams|9|q)';
 
   var FAT_TOTAL = new RegExp('tota[li1|]\\s*fat\\s*[:\\-]?\\s*(' + NUM + ')\\s*' + GU + '\\b', 'i');
-  var FAT_ANY = new RegExp('([a-z]+)?\\s*fat\\s*[:\\-]?\\s*(' + NUM + ')\\s*' + GU + '\\b', 'gi');
+  // The qualifier may be abbreviated with a full stop — linear panels write
+  // "Sat. Fat 5g". Without allowing for that dot the qualifier was not captured
+  // at all, the line looked unqualified, and the saturated figure was taken as
+  // the total: on a glare frame of a milk jug that reported 5g of fat instead
+  // of 8g, which is a wrong number rather than a missing one.
+  var FAT_ANY = new RegExp('([a-z]+)?\\.?\\s*fat\\s*[:\\-]?\\s*(' + NUM + ')\\s*' + GU + '\\b', 'gi');
   var FAT_SUBLINE = /^(saturated|satd?|trans|from|poly|mono|polyunsaturated|monounsaturated)$/i;
 
   function findFat(text) {

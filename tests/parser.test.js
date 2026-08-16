@@ -73,6 +73,122 @@ group('the reference panel', function () {
   check('band', m.band, 'high');
 });
 
+/* ---------- the other panel ----------
+   Small packages and gallon jugs do not have room for the table, so they print
+   the same information as one running sentence. It is a different layout with
+   different abbreviations, and every one of the checks below failed before this
+   format was handled. From a Great Value whole milk gallon. */
+
+var LINEAR_PANEL =
+  'Nutrition Facts Servings: 16, Serv. size: 1 cup (240mL), ' +
+  'Amount per serving: Calories 150, Total Fat 8g (10% DV), Sat. Fat 5g (25% DV), ' +
+  'Trans Fat 0g, Cholest. 35mg (11% DV), Sodium 120mg (5% DV), ' +
+  'Total Carb. 12g (4% DV), Fiber 0g (0% DV), Total Sugars 11g (Incl. 0g Added Sugars, 0% DV), ' +
+  'Protein 8g, Vit. D (10% DV), Calcium (20% DV), Iron (0% DV), Potas. (8% DV), ' +
+  'Vit. A (10% DV). % DV = % Daily Value';
+
+group('the linear panel (a gallon of milk)', function () {
+  var p = LabelParser.parse(LINEAR_PANEL);
+
+  // The calorie figure is followed by a comma here, because the panel is a
+  // list. Refusing a number followed by "." or "," — which is how a decimal
+  // point was kept out — refused this one too, and the reading silently fell
+  // back to totting up the macros.
+  check('calories are read from the line', p.caloriesRead, 150);
+  check('not reconstructed from the macros', p.caloriesFromMacros, false);
+  check('and the macros confirm them', p.caloriesConfirmed, true);
+
+  // "Serv. size", not "Serving size".
+  check('the abbreviated serving line is found', p.servingGrams, 240);
+  check('in millilitres', p.servingUnit, 'ml');
+
+  // "Servings: 16" — this panel never says "per container" at all, and without
+  // it a gallon of milk has no container size and no calories per dollar.
+  check('servings with no "per container"', p.servingsPerContainer, 16);
+
+  check('total fat, not the saturated line under it', p.fat, 8);
+  check('the abbreviated carbohydrate line', p.carbs, 12);
+  check('protein', p.protein, 8);
+  check('fiber', p.fiber, 0);
+  check('complete', p.complete, true);
+
+  var m = LabelParser.metrics(p, { price: 3.24 });
+  check('calories per millilitre', m.caloriesPerGram, 150 / 240, 0.0001);
+  check('labelled per mL', m.perGramUnit, 'mL');
+  // 16 x 240mL = 3840mL, which is a US gallon to within the rounding on the
+  // serving size.
+  check('the jug holds', m.totalGrams, 3840);
+  check('and that many calories', m.totalCalories, 2400);
+  check('calories per dollar', m.caloriesPerDollar, 2400 / 3.24, 0.01);
+  check('dollars per 1000 calories', m.dollarsPerThousandCalories, 3.24 / 2.4, 0.001);
+  check('from the servings count', m.containerBasis, 'servings');
+});
+
+group('punctuation after a number', function () {
+  // The reason the guard cannot simply exclude "." and ",": one of them ends a
+  // number and the other is inside it, and only what follows tells them apart.
+  check('a comma is a list separator', LabelParser.parse('Calories 150, Total Fat 8g').caloriesRead, 150);
+  check('a full stop ends a sentence', LabelParser.parse('Calories 150. Total Fat 8g').caloriesRead, 150);
+  check('a comma before a digit is a decimal', LabelParser.parse('Calories 1,5 Total Fat 8g').caloriesRead, null);
+  // ...and the original reason for the guard, which must still hold: a partial
+  // number must never be returned from a line that was read perfectly.
+  check('no prefix of a longer number', LabelParser.parse('Calories 230 % Daily Value').caloriesRead, 230);
+  check('nor from a decimal', LabelParser.parse('Calories 230.5 Total Fat 8g').caloriesRead, null);
+});
+
+group('the saturated fat line', function () {
+  // "Sat. Fat" is the linear panel's abbreviation, and the sub-lines are
+  // already inside the total — counting one as the total understates the fat
+  // and, through the macro cross-check, the calories it is used to confirm.
+  var abbrev = LabelParser.parse(
+    'Serv. size: 1 cup (240mL), Calories 150, Total Fat 8g, Sat. Fat 5g, Protein 8g, Total Carb. 12g');
+  check('the total wins over the abbreviated sub-line', abbrev.fat, 8);
+
+  // The case that actually bit: glare ate the word "Total", so the fallback
+  // ran — and with the full stop unaccounted for it read the saturated line as
+  // the total. Missing is the correct answer here; 5 is not.
+  var noTotal = LabelParser.parse(
+    'Serv. size: 1 cup (240mL), Calories 150, Sat. Fat 5g, Trans Fat 0g, Protein 8g');
+  check('with no total line, the sub-line is refused', noTotal.fat, null);
+
+  ['Saturated Fat 5g', 'Sat Fat 5g', 'Sat. Fat 5g', 'Trans Fat 5g',
+   'Polyunsaturated Fat 5g', 'Monounsaturated Fat 5g'
+  ].forEach(function (line, i) {
+    var p = LabelParser.parse('Serving size (100g) Calories 150, ' + line + ', Protein 8g');
+    check('sub-line ' + i + ' (' + line.split(' ')[0] + ') is not the total', p.fat, null);
+  });
+
+  // An unqualified "Fat 8g" is still a total — some panels really do write it
+  // that way, and refusing it would lose the macro check entirely.
+  var bare = LabelParser.parse('Serving size (100g) Calories 150, Fat 8g, Protein 8g');
+  check('a bare fat line is a total', bare.fat, 8);
+});
+
+group('serving-size wordings', function () {
+  ['Serving size 1 cup (240mL)', 'Serv. size: 1 cup (240mL)', 'Serv size 1 cup (240mL)',
+   'SERVING SIZE 1 cup (240mL)', 'Serv.size 1 cup (240mL)'
+  ].forEach(function (wording, i) {
+    var p = LabelParser.parse(wording + ' Calories 120 Total Fat 5g Total Carbohydrate 12g Protein 8g');
+    check('wording ' + i + ': "' + wording.slice(0, 12) + '..."', p.servingGrams, 240);
+  });
+});
+
+group('servings-count wordings', function () {
+  var tail = ' Serving size (55g) Calories 230 Total Fat 8g Total Carbohydrate 37g Protein 3g';
+  check('Servings: 16', LabelParser.parse('Servings: 16,' + tail).servingsPerContainer, 16);
+  check('Servings 16', LabelParser.parse('Servings 16' + tail).servingsPerContainer, 16);
+  check('16 servings per container', LabelParser.parse('16 servings per container' + tail).servingsPerContainer, 16);
+  check('Servings Per Container 16', LabelParser.parse('Servings Per Container 16' + tail).servingsPerContainer, 16);
+
+  // The loose "Servings: N" pattern must not fire on a serving *size* line. S,
+  // I and Z are all digit lookalikes, so "size" itself reads as a number unless
+  // real digits are demanded — and the singular has no "s" to match on.
+  var sizeFirst = LabelParser.parse(
+    'Serving size 2/3 cup (55g) Calories 230 Total Fat 8g Total Carbohydrate 37g Protein 3g');
+  check('a serving size is not a servings count', sizeFirst.servingsPerContainer, null);
+  check('and the size itself still reads', sizeFirst.servingGrams, 55);
+});
+
 /* ---------- what the camera actually hands over ---------- */
 
 group('OCR damage', function () {

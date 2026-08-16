@@ -41,12 +41,31 @@ var VARIANTS = [
   { name: 'camera sim: glare and low contrast', scale: 1, blur: 1.3, glare: 0.35, contrast: 0.7, rotate: -6 }
 ];
 
-var EXPECTED = {
-  calories: 230,
-  servingGrams: 55,
-  servingsPerContainer: 8,
-  fat: 8, carbs: 37, protein: 3
-};
+/* Both panel layouts. They are not variations on a theme — the linear one uses
+ * different words ("Serv. size"), states its servings count without ever saying
+ * "per container", measures in millilitres, and puts a comma after every number
+ * because it is a list. Each of those broke the reader when only the table was
+ * being tested against. */
+var PANELS = [
+  {
+    name: 'tabular panel (FDA example)',
+    fixture: '/tests/label-fixture.html',
+    expected: {
+      calories: 230, servingGrams: 55, servingsPerContainer: 8,
+      fat: 8, carbs: 37, protein: 3
+    },
+    price: 4.99
+  },
+  {
+    name: 'linear panel (gallon of milk)',
+    fixture: '/tests/label-fixture-linear.html',
+    expected: {
+      calories: 150, servingGrams: 240, servingsPerContainer: 16,
+      fat: 8, carbs: 12, protein: 8
+    },
+    price: 3.24
+  }
+];
 
 /* The contract this harness holds the reader to, and the distinction the whole
  * app is built on: **a missing number is acceptable, a wrong one is not.**
@@ -68,8 +87,6 @@ var EXPECTED = {
  */
 var REQUIRED = ['calories', 'servingGrams'];
 
-var PRICE = 4.99;
-
 (async function () {
   // A Chromium already on the machine is used when it is pointed at. Playwright
   // pins an exact build number and refuses anything else, which on a host that
@@ -90,95 +107,111 @@ var PRICE = 4.99;
   });
   var page = await ctx.newPage();
 
-  // Render the fixture and take the panel's own pixels.
-  await page.goto(BASE + '/tests/label-fixture.html', { waitUntil: 'load' });
-  var shot = await page.locator('#panel').screenshot();
-  var pngDataUrl = 'data:image/png;base64,' + shot.toString('base64');
-
-  // Then drive the scanner page, which is the code that actually ships.
   var errors = [];
   page.on('pageerror', function (e) { errors.push(String(e)); });
+
+  // Every panel is captured first, then all of them are run through one loaded
+  // scanner page — the OCR engine takes a few seconds to start and there is no
+  // reason to pay that twice.
+  var captures = [];
+  for (var pi = 0; pi < PANELS.length; pi++) {
+    await page.goto(BASE + PANELS[pi].fixture, { waitUntil: 'load' });
+    var shot = await page.locator('#panel').screenshot();
+    captures.push('data:image/png;base64,' + shot.toString('base64'));
+  }
+
+  // Then drive the scanner page, which is the code that actually ships.
   await page.goto(BASE + '/scan.html', { waitUntil: 'load' });
   await page.waitForFunction('window.__scan && window.__scan.ready()', null, { timeout: 120000 });
 
-  var results = [];
-  for (var i = 0; i < VARIANTS.length; i++) {
-    var v = VARIANTS[i];
-    var degraded = await page.evaluate(degradeInPage, { src: pngDataUrl, v: v });
-    var t = Date.now();
-    var out = await page.evaluate(function (src) { return window.__scan.readImage(src); }, degraded);
-    results.push({ variant: v.name, out: out, wall: Date.now() - t });
+  var runs = [];
+  for (var pj = 0; pj < PANELS.length; pj++) {
+    var results = [];
+    for (var i = 0; i < VARIANTS.length; i++) {
+      var v = VARIANTS[i];
+      var degraded = await page.evaluate(degradeInPage, { src: captures[pj], v: v });
+      var t = Date.now();
+      var out = await page.evaluate(function (src) { return window.__scan.readImage(src); }, degraded);
+      results.push({ variant: v.name, out: out, wall: Date.now() - t });
+    }
+    runs.push({ panel: PANELS[pj], results: results });
   }
 
   await browser.close();
 
   /* ---------- report ---------- */
 
-  var failed = 0;
-  console.log('\nEnd-to-end: rendered panel -> canvas -> Tesseract -> parser -> metrics\n');
+  var failed = 0, total = 0;
+  console.log('\nEnd-to-end: rendered panel -> canvas -> Tesseract -> parser -> metrics');
 
-  results.forEach(function (r) {
-    var p = r.out.parsed;
-    var m = r.out.metrics;
-    var wrong = [], missing = [];
-    Object.keys(EXPECTED).forEach(function (k) {
-      if (p[k] === null || p[k] === undefined) {
-        // Absent is only a failure for the two fields the headline needs.
-        if (REQUIRED.indexOf(k) !== -1) wrong.push(k + ' missing');
-        else missing.push(k);
-      } else if (p[k] !== EXPECTED[k]) {
-        wrong.push(k + '=' + p[k] + ' (want ' + EXPECTED[k] + ')');
-      }
+  runs.forEach(function (run) {
+    var expected = run.panel.expected;
+    console.log('\n' + run.panel.name);
+
+    run.results.forEach(function (r) {
+      total++;
+      var p = r.out.parsed;
+      var m = r.out.metrics;
+      var wrong = [], missing = [];
+      Object.keys(expected).forEach(function (k) {
+        if (p[k] === null || p[k] === undefined) {
+          // Absent is only a failure for the two fields the headline needs.
+          if (REQUIRED.indexOf(k) !== -1) wrong.push(k + ' missing');
+          else missing.push(k);
+        } else if (p[k] !== expected[k]) {
+          wrong.push(k + '=' + p[k] + ' (want ' + expected[k] + ')');
+        }
+      });
+
+      var ok = wrong.length === 0;
+      if (!ok) failed++;
+
+      // The unit comes off the reading rather than being assumed: one of these
+      // panels measures its serving in millilitres, and printing "g" over it
+      // would make the harness the first thing lying about the answer.
+      var unit = m.perGramUnit;
+      console.log((ok ? '  PASS  ' : '  FAIL  ') + r.variant);
+      console.log('        ' + r.out.ms + 'ms in the reader, ' + r.wall + 'ms end to end');
+      console.log('        calories ' + p.calories + ' · serving ' + p.servingGrams + unit +
+                  ' · ' + p.servingsPerContainer + ' servings');
+      console.log('        ' + fmt(m.caloriesPerGram, 2) + ' cal/' + unit +
+                  ' · container ' + fmt(m.totalCalories, 0) + ' cal');
+      var flags = [];
+      if (p.caloriesConfirmed) flags.push('macros confirm the headline');
+      if (p.caloriesCorrected) flags.push('CALORIES CORRECTED');
+      if (p.servingCorrected) flags.push('SERVING CORRECTED');
+      if (p.caloriesDisagree) flags.push('MACROS DISAGREE');
+      if (p.caloriesFromMacros) flags.push('calories came from the macros');
+      if (p.servingUnitInferred) flags.push('unit assumed');
+      if (p.densityUncertain) flags.push('DENSITY UNCERTAIN');
+      if (flags.length) console.log('        ' + flags.join(' · '));
+      // Named, not hidden. A frame that quietly dropped half the panel while
+      // reporting a pass is how a harness stops being evidence of anything.
+      if (missing.length) console.log('        not read (allowed, app asks for these): ' + missing.join(', '));
+      if (wrong.length) console.log('        WRONG: ' + wrong.join(', '));
+      // E2E_DEBUG=1 prints what the reader actually handed the parser. When a
+      // panel will not read, this is the only thing that says whether the
+      // problem is the camera, the engine or the patterns.
+      if (process.env.E2E_DEBUG) console.log('        text: ' + p.text);
+      console.log('');
     });
 
-    var ok = wrong.length === 0;
-    if (!ok) failed++;
-
-    console.log((ok ? '  PASS  ' : '  FAIL  ') + r.variant);
-    console.log('        ' + r.out.ms + 'ms in the reader, ' + r.wall + 'ms end to end');
-    console.log('        calories ' + p.calories + ' · serving ' + p.servingGrams + 'g · ' +
-                p.servingsPerContainer + ' servings');
-    console.log('        ' + fmt(m.caloriesPerGram, 2) + ' cal/' + m.perGramUnit +
-                ' · container ' + fmt(m.totalCalories, 0) + ' cal');
-    var flags = [];
-    if (p.caloriesConfirmed) flags.push('macros confirm the headline');
-    if (p.caloriesCorrected) flags.push('CALORIES CORRECTED');
-    if (p.servingCorrected) flags.push('SERVING CORRECTED');
-    if (p.caloriesDisagree) flags.push('MACROS DISAGREE');
-    if (p.caloriesFromMacros) flags.push('calories came from the macros');
-    if (p.densityUncertain) flags.push('DENSITY UNCERTAIN');
-    if (flags.length) console.log('        ' + flags.join(' · '));
-    // Named, not hidden. A frame that quietly dropped half the panel while
-    // reporting a pass is how a harness stops being evidence of anything.
-    if (missing.length) console.log('        not read (allowed, app asks for these): ' + missing.join(', '));
-    if (wrong.length) console.log('        WRONG: ' + wrong.join(', '));
-    // E2E_DEBUG=1 prints what the reader actually handed the parser. When a
-    // panel will not read, this is the only thing that says whether the problem
-    // is the camera, the engine or the patterns.
-    if (process.env.E2E_DEBUG) console.log('        text: ' + p.text);
-    console.log('');
+    // The price arithmetic, on the panel's real figures. This is the half of
+    // the app the parser suite proves and a camera cannot.
+    var totalCal = expected.calories * expected.servingsPerContainer;
+    console.log('  At $' + run.panel.price.toFixed(2) + ' a package: ' + totalCal +
+                ' cal  ->  ' + fmt(totalCal / run.panel.price, 0) + ' cal/$  ·  $' +
+                fmt(run.panel.price / (totalCal / 1000), 2) + ' per 1000 cal');
   });
 
-  // The price arithmetic, on the best read available. This is the half of the
-  // app the parser suite proves and the camera cannot.
-  var good = results.filter(function (r) { return r.out.parsed.complete; })[0];
-  if (good) {
-    var m = good.out.metrics;
-    var expectTotal = EXPECTED.calories * EXPECTED.servingsPerContainer;
-    console.log('  With a $' + PRICE.toFixed(2) + ' package price:');
-    console.log('    container ' + expectTotal + ' cal  ->  ' +
-                fmt(expectTotal / PRICE, 0) + ' cal/$  ·  $' +
-                fmt(PRICE / (expectTotal / 1000), 2) + ' per 1000 cal');
-    console.log('');
-  }
-
   if (errors.length) {
-    console.log('  Page errors:');
+    console.log('\n  Page errors:');
     errors.forEach(function (e) { console.log('    ' + e); });
     failed++;
   }
 
-  console.log((results.length - failed) + '/' + results.length + ' variants read correctly');
+  console.log('\n' + (total - failed) + '/' + total + ' reads correct across ' +
+              runs.length + ' panel layouts');
   process.exit(failed ? 1 : 0);
 }()).catch(function (e) {
   console.error(e);

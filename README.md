@@ -119,17 +119,28 @@ an angle, slightly out of focus, with a glare band across the packaging.
 `tests/e2e.js` runs the real shipping pipeline: canvas preprocessing, Tesseract,
 the parser, the arithmetic.
 
-| Frame | Read time | Result |
-|---|---|---|
-| Clean render | ~1.9s | correct |
-| 4° angle, 1.1px blur, mild glare | ~1.5s | correct |
-| Half resolution | ~1.9s | correct |
-| 6° angle, heavy glare, low contrast | ~1.4s | correct, minus the servings count |
+Two panel layouts are tested, because they are not variations on a theme:
 
-The last row is the interesting one. Glare turned the "8" of "8 servings per
-container" into a "g", and the reader left the field **empty** rather than
-guessing — see below. Calories, serving size and calories per gram were right on
-every frame.
+- **the table** — the FDA's example panel, the one on most boxes
+- **the linear panel** — the same information as one running sentence, which is
+  what a gallon jug or a small package prints when there is no room for the
+  table. Abbreviated (`Serv. size`), no "per container" anywhere, a serving in
+  millilitres, and a comma after every number.
+
+| Frame | Table | Linear |
+|---|---|---|
+| Clean render | ~1.9s correct | ~0.9s correct |
+| 4° angle, 1.1px blur, mild glare | ~1.5s correct | ~0.8s correct |
+| Half resolution | ~1.9s correct | ~0.8s correct |
+| 6° angle, heavy glare, low contrast | ~1.4s correct¹ | ~0.8s correct² |
+
+¹ minus the servings count · ² minus fat and carbohydrate
+
+Those two footnotes are the interesting part. Glare turned the "8" of "8
+servings per container" into a "g" on one panel and ate the word "Total" from
+two macro lines on the other, and in both cases the reader left the field
+**empty** rather than guessing — see below. Calories, serving size and calories
+per gram were right on every frame of both layouts.
 
 Two agreeing reads are required before a verdict is trusted, so call it **2–4
 seconds** to a confirmed answer on phone-class hardware.
@@ -182,10 +193,16 @@ was handled:
 | The calorie figure splits | `Calories 230` → `Calories 2 30` | It is set in the largest type on the panel, and large type is where the engine inserts spaces. |
 | Glare invents accents | `Serving size` → `Serving sizé` | A rule above the line lands on the letter. |
 | The macro units go too | `Total Fat 8g` → `Total Fat 89` | Same "g", under worse contrast. |
+| "Total" is eaten | `Total Fat 8g` → `Fat 8g` | Leaves the sub-line (`Sat. Fat 5g`) as the only fat line the reader can see. |
 
 The first two are the dangerous ones: both produce a complete, plausible number
 from a line the engine otherwise read perfectly. `Calories 2 30` read naively is
 **2 calories**.
+
+The last is the same trap one level up. With "Total" gone, `Sat. Fat 5g` is the
+only fat line left, and taking it reports 5g where the panel says 8g — a number
+that looks entirely reasonable and is wrong. Sub-lines are refused by name, full
+stop and all, so the fat comes back **missing** instead.
 
 ## It needs HTTPS for the camera
 
@@ -362,7 +379,7 @@ rows into the journal with a plain form POST — measured, not theorised.
 ## Tests
 
 ```sh
-npm test                        # 229 checks, no browser, no dependencies
+npm test                        # 272 checks, no browser, no dependencies
 ```
 
 The end-to-end harness needs a browser and is deliberately not part of that:
@@ -413,7 +430,7 @@ link inside the root actually points.
 | `tests/parser.test.js` | The reading and arithmetic, headless |
 | `tests/serve.test.js` | Where `tailscale serve` publishes this app |
 | `tests/journal.test.js` | What the record accepts, collapses and exports |
-| `tests/e2e.js` | The real pipeline, in a real browser |
+| `tests/e2e.js` | The real pipeline, in a real browser, on both panel layouts |
 
 ## Notes
 
